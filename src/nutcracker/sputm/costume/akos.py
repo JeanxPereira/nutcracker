@@ -47,11 +47,11 @@ def akof_from_bytes(data: bytes) -> Iterator[Tuple[int, int]]:
             yield cd_off, ci_off
 
 
-def decode1(width, height, pal, data, verify=True):
+def decode1(width, height, pal, data, verify=False):
     with io.BytesIO(data) as stream:
         res = convert_to_pil_image(
             bpp_cost.decode1(width, height, len(pal.data), stream, strict=False),
-            size=(width, height)
+            size=(width, height),
         )
 
     if verify:
@@ -59,7 +59,7 @@ def decode1(width, height, pal, data, verify=True):
         with io.BytesIO(d_data) as stream:
             res2 = convert_to_pil_image(
                 bpp_cost.decode1(width, height, len(pal.data), stream, strict=False),
-                size=(width, height)
+                size=(width, height),
             )
         assert np.array_equal(np.asarray(res), np.asarray(res2))
         assert d_data == data, (len(d_data), len(data))
