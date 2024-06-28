@@ -19,6 +19,7 @@ from nutcracker.sputm.strings import (
 )
 from nutcracker.sputm.tree import dump_resources, narrow_schema, open_game_resource
 from nutcracker.utils.fileio import write_file
+
 from .preset import sputm
 from .room import runner as room_image
 from .windex import runner as script_windex
@@ -69,7 +70,10 @@ def build(
 def extract_strings(
     filename: Path = typer.Argument(..., help='Game resource index file'),
     textfile: Path = typer.Option(
-        'strings.txt', "--textfile", "-t", help='save strings to file'
+        'strings.txt',
+        '--textfile',
+        '-t',
+        help='save strings to file',
     ),
 ) -> None:
     gameres = open_game_resource(filename)
@@ -81,8 +85,9 @@ def extract_strings(
 
     root = gameres.read_resources(
         schema=narrow_schema(
-            SCHEMA, {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', 'TLKE', *script_map}
-        )
+            SCHEMA,
+            {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', 'TLKE', *script_map},
+        ),
     )
 
     var_size = 4 if gameres.game.version >= 8 else 2
@@ -96,7 +101,10 @@ def extract_strings(
 def inject_strings(
     filename: Path = typer.Argument(..., help='Game resource index file'),
     textfile: Path = typer.Option(
-        'strings.txt', "--textfile", "-t", help='save strings to file'
+        'strings.txt',
+        '--textfile',
+        '-t',
+        help='save strings to file',
     ),
 ) -> None:
     gameres = open_game_resource(filename)
@@ -108,14 +116,15 @@ def inject_strings(
 
     root = gameres.read_resources(
         schema=narrow_schema(
-            SCHEMA, {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', 'TLKE', *script_map}
-        )
+            SCHEMA,
+            {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', 'TLKE', *script_map},
+        ),
     )
 
     with open(textfile, 'r', **RAW_ENCODING) as f:
         fixed_lines = (print_to_msg(line) for line in f)
         updated_resource = list(
-            update_element_strings(root, fixed_lines, script_ops, script_map)
+            update_element_strings(root, fixed_lines, script_ops, script_map),
         )
 
     rebuild_resources(gameres, basename, updated_resource)
@@ -133,7 +142,7 @@ def extract_fonts(
     print(f'Extracting fonts from game resources: {basename}')
 
     root = gameres.read_resources(
-        schema=narrow_schema(SCHEMA, {'LECF', 'LFLF', 'CHAR'})
+        schema=narrow_schema(SCHEMA, {'LECF', 'LFLF', 'CHAR'}),
     )
 
     outdir = os.path.join(basename, 'chars')
@@ -154,7 +163,7 @@ def inject_fonts(
     print(f'Creating path for game fonts: {basename}')
 
     root = gameres.read_resources(
-        schema=narrow_schema(SCHEMA, {'LECF', 'LFLF', 'CHAR'})
+        schema=narrow_schema(SCHEMA, {'LECF', 'LFLF', 'CHAR'}),
     )
 
     base = os.path.join(dirname, 'chars')
@@ -166,11 +175,8 @@ def inject_fonts(
         if os.path.exists(patch_file):
             base_out = os.path.join(dirname, path)
             os.makedirs(os.path.dirname(base_out), exist_ok=True)
-            write_file(
-                base_out,
-                sputm.mktag('CHAR', encode_char(elem, patch_file))
-            )
+            write_file(base_out, sputm.mktag('CHAR', encode_char(elem, patch_file)))
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app()

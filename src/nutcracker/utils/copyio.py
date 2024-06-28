@@ -1,9 +1,10 @@
 import functools
 import io
-from typing import Callable, Iterator, Optional
+from collections.abc import Callable, Iterator
 
 
 def buffered(
-    source: Callable[[Optional[int]], bytes], buffer_size: int = io.DEFAULT_BUFFER_SIZE
+    source: Callable[[int | None], bytes],
+    buffer_size: int = io.DEFAULT_BUFFER_SIZE,
 ) -> Iterator[bytes]:
     return iter(functools.partial(source, buffer_size), b'')

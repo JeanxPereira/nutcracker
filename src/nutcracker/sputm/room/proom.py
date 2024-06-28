@@ -2,7 +2,6 @@
 
 import io
 from dataclasses import dataclass
-from typing import Optional
 
 import numpy as np
 
@@ -66,9 +65,9 @@ class RoomHeader:
     width: int
     height: int
     robjs: int
-    version: Optional[int] = None
-    zbuffers: Optional[int] = None
-    transparency: Optional[int] = None
+    version: int | None = None
+    zbuffers: int | None = None
+    transparency: int | None = None
 
 
 def read_rmhd_structured(data) -> RoomHeader:

@@ -1,6 +1,6 @@
-
 import itertools
 from typing import IO, Any
+
 import numpy as np
 
 
@@ -12,7 +12,6 @@ def decode1(
     *,
     strict: bool = True,
 ) -> np.ndarray[Any, np.uint8]:
-
     masks = {16: (4, 0x0F), 32: (3, 0x07), 64: (2, 0x03)}
     shift, mask = masks[num_colors]
 
@@ -29,7 +28,8 @@ def decode1(
             out += bytes([color]) * rep
 
         return np.frombuffer(out[:decoded_size], dtype=np.uint8).reshape(
-            (height, width), order='F'
+            (height, width),
+            order='F',
         )
 
     except IndexError:
@@ -37,7 +37,8 @@ def decode1(
             raise
         out += b'\0' * (decoded_size - len(out))
         return np.frombuffer(out[:decoded_size], dtype=np.uint8).reshape(
-            (height, width), order='F'
+            (height, width),
+            order='F',
         )
 
 

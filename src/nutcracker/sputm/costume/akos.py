@@ -1,18 +1,19 @@
 #!/usr/bin/env python3
 import io
 import os
-from typing import Iterator, NamedTuple, Tuple
+from collections.abc import Iterator
+from typing import NamedTuple
 
 import numpy as np
 
-from nutcracker.codex import bomp, rle, smap, bpp_cost
+from nutcracker.codex import bomp, bpp_cost, rle, smap
 from nutcracker.graphics.image import convert_to_pil_image
-from nutcracker.utils.funcutils import flatten
-
 from nutcracker.sputm.room.pproom import get_rooms, read_room_settings
 from nutcracker.sputm.tree import open_game_resource
+from nutcracker.utils.funcutils import flatten
 
 from ..preset import sputm
+
 
 class AkosHeader(NamedTuple):
     version: int
@@ -35,7 +36,7 @@ def akos_header_from_bytes(data: bytes) -> AkosHeader:
         )
 
 
-def akof_from_bytes(data: bytes) -> Iterator[Tuple[int, int]]:
+def akof_from_bytes(data: bytes) -> Iterator[tuple[int, int]]:
     with io.BytesIO(data) as stream:
         while True:
             entry = stream.read(6)
@@ -83,8 +84,8 @@ def decode16(width, height, pal, data):
         out = smap.decode_run_majmin(stream, width * height, bpp)
         return convert_to_pil_image(out, size=(width, height))
 
-def decode_frame(akhd, ci, cd, palette):
 
+def decode_frame(akhd, ci, cd, palette):
     width = int.from_bytes(ci[0:2], signed=False, byteorder='little')
     height = int.from_bytes(ci[2:4], signed=False, byteorder='little')
     xoff = int.from_bytes(ci[4:6], signed=False, byteorder='little')
@@ -102,7 +103,7 @@ def decode_frame(akhd, ci, cd, palette):
 def construct_palette(akpl_data, rgbs_data):
     palette = bytearray(0x300)
     for idx, color in enumerate(akpl_data):
-        palette[3*idx:3*(idx+1)] = rgbs_data[3*color:3*(color+1)]
+        palette[3 * idx : 3 * (idx + 1)] = rgbs_data[3 * color : 3 * (color + 1)]
     return palette
 
 
@@ -188,7 +189,6 @@ if __name__ == '__main__':
     files = sorted(set(flatten(glob.iglob(r) for r in args.files)))
     print(files)
     for filename in files:
-
         print(filename)
 
         gameres = open_game_resource(filename)
@@ -203,13 +203,12 @@ if __name__ == '__main__':
         os.makedirs(f'AKOS_out/{basename}', exist_ok=True)
 
         for t in root:
-
-            for lflf in get_rooms(t):
+            for lflf in get_rooms(t.children()):
                 # print(lflf, lflf.attribs["path"])
                 _, palette, _, _ = read_room_settings(lflf)
 
                 for akos in sputm.findall('AKOS', lflf):
-                    print(akos, akos.attribs["path"])
+                    print(akos, akos.attribs['path'])
 
                     for idx, ((xoff, yoff), im) in enumerate(
                         read_akos_resource(akos, palette),

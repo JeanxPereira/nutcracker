@@ -1,15 +1,21 @@
-import struct
 import os
+import struct
 from pprint import pprint
 
-from nutcracker.earwax.resource import dump_resources, read_dir, read_inner_uint16le, read_room_names
+from nutcracker.earwax.resource import (
+    dump_resources,
+    read_dir,
+    read_inner_uint16le,
+    read_room_names,
+)
 from nutcracker.sputm.index import compare_pid_off, read_uint8le
-from nutcracker.utils.funcutils import flatten
 from nutcracker.utils.fileio import read_file
+from nutcracker.utils.funcutils import flatten
 
 from .preset import earwax
 
 UINT16LE = struct.Struct('<H')
+
 
 def read_index(root):
     rnam = {}
@@ -42,6 +48,7 @@ def read_index(root):
         'LS': read_uint8le,
     }
 
+
 def read_config(filename, chiper_key=0x00):
     index = read_file(filename, key=chiper_key)
 
@@ -54,6 +61,7 @@ def read_config(filename, chiper_key=0x00):
     root = earwax.map_chunks(index)
     rnam, idgens = read_index(root)
     return index, rnam, idgens
+
 
 def open_game_resource(filename: str, chiper_key=0x00):
     index, rnam, idgens = read_config(filename, chiper_key=chiper_key)
@@ -78,9 +86,7 @@ def open_game_resource(filename: str, chiper_key=0x00):
             idgens['LF'] = lambda *_: room_id
 
             get_gid = idgens.get(chunk.tag)
-            gid = get_gid and get_gid(
-                room_id, chunk.data, offset
-            )
+            gid = get_gid and get_gid(room_id, chunk.data, offset)
 
             base = chunk.tag + (
                 f'_{gid:04d}'
@@ -98,7 +104,23 @@ def open_game_resource(filename: str, chiper_key=0x00):
 
         schema = {
             'LF': {'RO', 'SC', 'SO', 'CO'},
-            'RO': {'SP', 'HD', 'EX', 'CC', 'OC', 'OI', 'NL', 'BM', 'SL', 'LS', 'BX', 'LC', 'PA', 'SA', 'EN'},
+            'RO': {
+                'SP',
+                'HD',
+                'EX',
+                'CC',
+                'OC',
+                'OI',
+                'NL',
+                'BM',
+                'SL',
+                'LS',
+                'BX',
+                'LC',
+                'PA',
+                'SA',
+                'EN',
+            },
             'HD': set(),
             'CC': set(),
             'SP': set(),
@@ -119,7 +141,9 @@ def open_game_resource(filename: str, chiper_key=0x00):
             'CO': set(),
         }
 
-        room = list(earwax(schema=schema).map_chunks(room_data, extra=update_element_path))
+        room = list(
+            earwax(schema=schema).map_chunks(room_data, extra=update_element_path),
+        )
         # pprint((fname, room))
         yield from room
 

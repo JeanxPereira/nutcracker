@@ -1,11 +1,6 @@
 #!/usr/bin/env python3
-import glob
-import io
 import os
 import struct
-from functools import partial
-
-from nutcracker.utils import funcutils
 
 FLAG_UNSIGNED = 1 << 0
 FLAG_16BITS = 1 << 1
@@ -32,7 +27,7 @@ def handle_sound_frame(chunk, frame_no):
     pan = chunk[9]
     if index == 0:
         print(
-            f'track_id:{track_id}, max_frames:{max_frames}, flags:{flags}, vol:{vol}, pan:{pan}'
+            f'track_id:{track_id}, max_frames:{max_frames}, flags:{flags}, vol:{vol}, pan:{pan}',
         )
         print(f'unsigned: {flags & FLAG_UNSIGNED}')
         print(f'16bit: {flags & FLAG_16BITS}')
@@ -62,7 +57,6 @@ if __name__ == '__main__':
     os.makedirs(output_dir, exist_ok=True)
     print(f'Decoding file: {basename}')
     with open(args.filename, 'rb') as res:
-
         header, frames = anim.parse(res)
 
         for idx, frame in enumerate(frames):

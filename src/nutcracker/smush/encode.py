@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 import os
+from collections.abc import Iterable, Iterator
 from dataclasses import asdict, replace
-from typing import Iterable, Iterator, Tuple
 
 from nutcracker.codex.codex import get_encoder
 from nutcracker.graphics.image import ImagePosition, TImage
+from nutcracker.kernel2.chunk import Chunk
 from nutcracker.smush import anim
 from nutcracker.smush.ahdr import AnimationHeader
 from nutcracker.smush.fobj import FrameObjectHeader, mkobj
@@ -16,18 +17,18 @@ from nutcracker.utils.fileio import write_file
 def make_nut_file(
     header: AnimationHeader,
     num_chars: int,
-    chars: Iterable[bytes],
+    chars: Iterable[Chunk],
 ) -> bytes:
-    chars = (smush.mktag('FRME', char) for char in chars)
+    chars = (smush.mktag('FRME', memoryview(bytes(char))) for char in chars)
     header = replace(header, nframes=num_chars)
     return anim.compose(header, chars)
 
 
 def encode_frame_objects(
-    frames: Iterable[Tuple[ImagePosition, TImage]],
+    frames: Iterable[tuple[ImagePosition, TImage]],
     codec: int,
     fake: int,
-) -> Iterator[bytes]:
+) -> Iterator[Chunk]:
     for loc, frame in frames:
         meta = FrameObjectHeader(codec=fake, **asdict(loc))
         print(meta)
@@ -42,7 +43,7 @@ def encode_frame_objects(
         fobj = mkobj(meta, encoded_frame)
         # print(mktag('FOBJ', fobj))
 
-        yield smush.mktag('FOBJ', fobj)
+        yield smush.mktag('FOBJ', memoryview(fobj))
 
 
 if __name__ == '__main__':

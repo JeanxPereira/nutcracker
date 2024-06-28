@@ -6,8 +6,8 @@ import numpy as np
 from PIL import Image
 
 from nutcracker.graphics import image
-from nutcracker.graphics.image import convert_to_pil_image
 from nutcracker.graphics.frame import resize_pil_image
+from nutcracker.graphics.image import convert_to_pil_image
 
 from ..preset import sputm
 from .proom import (
@@ -26,9 +26,7 @@ def read_room_settings(lflf):
     trns = sputm.find('TRNS', room)
     if trns:
         assert header.transparency is None
-        header.transparency = sputm.find(
-            'TRNS', room
-        ).data
+        header.transparency = sputm.find('TRNS', room).data
     palette = (sputm.find('CLUT', room) or sputm.findpath('PALS/WRAP/APAL', room)).data
 
     rmim = sputm.find('RMIM', room) or sputm.find('RMIM', lflf)
@@ -38,7 +36,9 @@ def read_room_settings(lflf):
         assert header.zbuffers is None
         assert len(rmih.data) == 2
         header.zbuffers = 1 + int.from_bytes(
-            rmih.data, signed=False, byteorder='little'
+            rmih.data,
+            signed=False,
+            byteorder='little',
         )
         assert 1 <= header.zbuffers <= 8
 
@@ -51,7 +51,10 @@ def read_room(header, rmim):
         for imxx in sputm.findall('IM{:02x}', rmim):
             assert imxx.tag == 'IM00', imxx.tag
             bgim = read_room_background(
-                imxx.children[0], header.width, header.height, header.zbuffers
+                imxx.children[0],
+                header.width,
+                header.height,
+                header.zbuffers,
             )
             if bgim is None:
                 continue
@@ -65,17 +68,21 @@ def read_room(header, rmim):
         # TODO: check for multiple IMAG in room bg (different image state)
         assert rmim.tag == 'IMAG'
         wrap = sputm.find('WRAP', rmim)
-        assert len(wrap.children) == 2, len(wrap.children)
+        _, *frames = wrap.children()
+        assert len(frames) == 1, len(frames)
 
-        for imxx in wrap.children[1:]:
+        for imxx in frames:
             assert imxx.attribs['gid'] == 1, imxx.attribs['gid']
 
-            chunk = sputm.mktag(imxx.tag, imxx.data)
+            chunk = bytes(sputm.mktag(imxx.tag, imxx.data))
             s = sputm.generate_schema(chunk)
             image = next(sputm(schema=s).map_chunks(chunk))
 
             bgim = read_room_background_v8(
-                image, header.width, header.height, header.zbuffers
+                image,
+                header.width,
+                header.height,
+                header.zbuffers,
             )
             if bgim is None:
                 continue
@@ -104,7 +111,13 @@ def read_objects(header, room, version):
             assert obj_id == obim.attribs['gid'], (obj_id, obim.attribs['gid'])
 
             for imxx in sputm.findall('IM{:02x}', obim):
-                bgim = read_room_background(imxx.children[0], obj_width, obj_height, 0, transparency=header.transparency)
+                bgim = read_room_background(
+                    imxx.children[0],
+                    obj_width,
+                    obj_height,
+                    0,
+                    transparency=header.transparency,
+                )
                 if bgim is None:
                     continue
                 im = convert_to_pil_image(bgim)
@@ -120,13 +133,20 @@ def read_objects(header, room, version):
             for idx, imag in enumerate(sputm.findall('IMAG', obim)):
                 assert idx == 0
                 wrap = sputm.find('WRAP', imag)
-                for iidx, bomp in enumerate(wrap.children[1:]):
-
-                    chunk = sputm.mktag(bomp.tag, bomp.data)
+                assert wrap is not None
+                _, *frames = wrap.children()
+                for iidx, bomp in enumerate(frames):
+                    chunk = bytes(sputm.mktag(bomp.tag, bomp.data))
                     s = sputm.generate_schema(chunk)
                     image = next(sputm(schema=s).map_chunks(chunk))
 
-                    bgim = read_room_background_v8(image, obj_width, obj_height, 0, transparency=header.transparency)
+                    bgim = read_room_background_v8(
+                        image,
+                        obj_width,
+                        obj_height,
+                        0,
+                        transparency=header.transparency,
+                    )
                     im = convert_to_pil_image(bgim)
 
                     path = bomp.attribs['path']
@@ -141,7 +161,7 @@ def get_rooms(root):
             if elem.tag in {'LFLF'}:
                 yield elem
             else:
-                yield from get_rooms(elem.children)
+                yield from get_rooms(elem.children())
 
 
 EGA = (
@@ -165,12 +185,11 @@ EGA = (
 EGA = np.asarray(EGA, dtype=np.uint8)
 
 
-
 def extract_room_images(root, basedir, rnam, version, ega_mode=False):
     for t in root:
         paths = {}
 
-        for lflf in get_rooms(t):
+        for lflf in get_rooms(t.children()):
             header, palette, room, rmim = read_room_settings(lflf)
             print(header)
             epal = sputm.find('EPAL', room)
@@ -189,7 +208,8 @@ def extract_room_images(root, basedir, rnam, version, ega_mode=False):
                     room_bg3[::2, :] = room_bg2[::2, :]
                     room_bg4[::2, :] = room_bg1[::2, :]
                     room_bg = np.dstack([room_bg3, room_bg4]).reshape(
-                        room_bg.shape[0], room_bg.shape[1] * 2
+                        room_bg.shape[0],
+                        room_bg.shape[1] * 2,
                     )
                     room_bg = np.repeat(room_bg, 2, axis=0)
                     # print(room_bg.shape)
@@ -197,7 +217,7 @@ def extract_room_images(root, basedir, rnam, version, ega_mode=False):
                 else:
                     room_bg.putpalette(palette)
 
-                path = f"{room_id:04d}_{rnam.get(room_id)}" if room_id in rnam else path
+                path = f'{room_id:04d}_{rnam.get(room_id)}' if room_id in rnam else path
 
                 path = path.replace(os.path.sep, '_')
                 # dirname = os.path.dirname(path)
@@ -222,7 +242,12 @@ def extract_room_images(root, basedir, rnam, version, ega_mode=False):
 
                 if room_bg:
                     im_layer = resize_pil_image(
-                        *room_bg.size, 39, im, image.ImagePosition(x1=obj_x, y1=obj_y)
+                        *room_bg.size,
+                        39,
+                        im,
+                        image.ImagePosition(x1=obj_x, y1=obj_y),
                     )
                     im_layer.putpalette(palette)
-                    im_layer.save(os.path.join(basedir, 'objects_layers', f'{path}.png'))
+                    im_layer.save(
+                        os.path.join(basedir, 'objects_layers', f'{path}.png'),
+                    )

@@ -2,9 +2,10 @@
 import io
 import os
 import struct
+from collections.abc import Iterable, Iterator, Sequence
 from functools import partial
 from itertools import chain
-from typing import Iterable, Iterator, NamedTuple, Sequence, Set
+from typing import NamedTuple
 
 import numpy as np
 from PIL import Image
@@ -12,9 +13,9 @@ from PIL import Image
 from nutcracker.codex.bpp_codec import decode_bpp_char
 from nutcracker.codex.rle import decode_lined_rle
 from nutcracker.graphics import grid, image
+from nutcracker.kernel2.element import Element
 
 from ..preset import sputm
-from ..types import Element
 
 CHAR_HEADER = struct.Struct('<2B2b')
 
@@ -46,7 +47,7 @@ def read_chars(stream, index, bpp):
     decoder = (
         partial(decode_bpp_char, bpp=bpp) if bpp in (1, 2, 4) else decode_lined_rle
     )
-    unique_vals: Set[int] = set()
+    unique_vals: set[int] = set()
     for (idx, off), nextoff in index:
         assert stream.tell() == off
         data = stream.read(nextoff - off)
@@ -120,7 +121,7 @@ def get_chars(root: Iterable[Element]) -> Iterator[Element]:
             if elem.tag in {'CHAR'}:
                 yield elem
             else:
-                yield from get_chars(elem.children)
+                yield from get_chars(elem.children())
 
 
 def decode_font(char: Element) -> image.TImage:

@@ -1,9 +1,8 @@
 from dataclasses import dataclass
-from typing import Optional, Union
 
 import deal
 
-BufferLike = Union[bytes, bytearray, memoryview]
+BufferLike = bytes | bytearray | memoryview
 
 
 class UnexpectedBufferSize(EOFError):
@@ -28,7 +27,7 @@ class NegativeSliceError(ValueError):
     deal.raises(UnexpectedBufferSize),
     deal.reason(UnexpectedBufferSize, lambda _: _.size != len(_.buffer)),
 )
-def validate_buffer_size(buffer: BufferLike, size: Optional[int] = None) -> BufferLike:
+def validate_buffer_size(buffer: BufferLike, size: int | None = None) -> BufferLike:
     if size and len(buffer) != size:
         raise UnexpectedBufferSize(size, len(buffer), buffer)
     return buffer
@@ -46,7 +45,7 @@ def splice(buffer: BufferLike, offset: int, size: int) -> BufferLike:
 
 
 @dataclass(frozen=True)
-class Splicer(object):
+class Splicer:
     offset: int
     size: int
 

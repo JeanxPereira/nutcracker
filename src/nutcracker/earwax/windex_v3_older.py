@@ -1,22 +1,42 @@
-
-from collections import deque
 import io
 import os
-from typing import IO, Callable, Iterable, Iterator, Tuple
+from collections import deque
+from collections.abc import Callable, Iterable, Iterator
+from typing import IO
+
 from nutcracker.earwax.older_sizeonly import open_game_resource
 from nutcracker.earwax.windex_v3 import OPCODES_v3, ops
-from nutcracker.earwax.windex_v4 import get_room_scripts, get_global_scripts, global_script
+from nutcracker.earwax.windex_v4 import (
+    get_global_scripts,
+    get_room_scripts,
+    global_script,
+)
 from nutcracker.kernel.element import Element
-from nutcracker.sputm.script.bytecode import BytecodeParseError, descumm_iter, get_argtype, verb_script
+from nutcracker.sputm.script.bytecode import (
+    BytecodeParseError,
+    descumm_iter,
+    get_argtype,
+    verb_script,
+)
 from nutcracker.sputm.script.parser import RefOffset
 from nutcracker.sputm.script.shared import BytecodeError, ScriptError, realize_refs
-from nutcracker.sputm.windex_v5 import ConditionalJump, UnconditionalJump, print_asts, print_locals, l_vars, semantic_key
+from nutcracker.sputm.windex_v5 import (
+    ConditionalJump,
+    UnconditionalJump,
+    l_vars,
+    print_asts,
+    print_locals,
+    semantic_key,
+)
 from nutcracker.utils.funcutils import flatten
 
-def global_script_v3(data: bytes) -> Tuple[bytes, bytes]:
+
+def global_script_v3(data: bytes) -> tuple[bytes, bytes]:
     return data[:4], data[4:]
 
+
 VERB_HEADER_SIZE = 17
+
 
 def verb_script_v3(data):
     header = data[:VERB_HEADER_SIZE]
@@ -26,15 +46,14 @@ def verb_script_v3(data):
     pref, data = verb_script(data[VERB_HEADER_SIZE:])
     return header + pref, data
 
+
 def parse_verb_meta_v3(meta):
     with io.BytesIO(meta[VERB_HEADER_SIZE:]) as stream:
         while True:
             key = stream.read(1)
             if key in {b'\0'}:  # , b'\xFF'}:
                 break
-            entry = int.from_bytes(
-                stream.read(2), byteorder='little', signed=False
-            )
+            entry = int.from_bytes(stream.read(2), byteorder='little', signed=False)
             yield key, entry - len(meta)
         assert stream.read() == b''
 
@@ -48,24 +67,28 @@ script_map = {
 }
 
 
-
 def dump_script_file(
     room_no: str,
-    room: Iterable[Element],
+    room: Element,
     decompile: Callable[[Element], Iterator[str]],
     outfile: IO[str],
 ):
-    for elem in get_global_scripts(room):
+    children = list(room.children())
+    print(children)
+    for elem in get_global_scripts(children):
         print('=================', elem)
         for line in decompile(elem):
             print(line, file=outfile)
         print('', file=outfile)  # end with new line
     print(f'room {room_no}', '{', file=outfile)
-    for elem in get_room_scripts(room):
+    for elem in get_room_scripts(children):
         print('', file=outfile)  # end with new line
         print('=================', elem)
         for line in decompile(elem):
-            print(line if line.endswith(']:') or not line else f'\t{line}', file=outfile)
+            print(
+                line if line.endswith(']:') or not line else f'\t{line}',
+                file=outfile,
+            )
     print('}', file=outfile)
     print('', file=outfile)  # end with new line
 
@@ -181,7 +204,10 @@ if __name__ == '__main__':
         root = open_game_resource(filename, chiper_key=int(args.chiper_key, 16))
         print(rnam)
 
-        script_dir = os.path.join('scripts', os.path.basename(os.path.dirname(filename)))
+        script_dir = os.path.join(
+            'scripts',
+            os.path.basename(os.path.dirname(filename)),
+        )
         os.makedirs(script_dir, exist_ok=True)
 
         for room in root:

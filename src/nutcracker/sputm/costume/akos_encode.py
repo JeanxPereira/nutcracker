@@ -3,20 +3,21 @@ import io
 import os
 import pathlib
 import struct
-from typing import Iterable, Iterator, NamedTuple, Tuple
+from collections.abc import Iterable, Iterator
+from typing import NamedTuple
 
 import numpy as np
 from PIL import Image
 
-from nutcracker.codex import bomp, rle, smap, bpp_cost
+from nutcracker.codex import bomp, bpp_cost, rle, smap
 from nutcracker.graphics.image import convert_to_pil_image
+from nutcracker.sputm.room.pproom import get_rooms, read_room_settings
+from nutcracker.sputm.tree import open_game_resource
 from nutcracker.utils.fileio import write_file
 from nutcracker.utils.funcutils import flatten
 
-from nutcracker.sputm.room.pproom import get_rooms, read_room_settings
-from nutcracker.sputm.tree import open_game_resource
-
 from ..preset import sputm
+
 
 class AkosHeader(NamedTuple):
     version: int
@@ -39,7 +40,7 @@ def akos_header_from_bytes(data: bytes) -> AkosHeader:
         )
 
 
-def akof_from_bytes(data: bytes) -> Iterator[Tuple[int, int]]:
+def akof_from_bytes(data: bytes) -> Iterator[tuple[int, int]]:
     with io.BytesIO(data) as stream:
         while True:
             entry = stream.read(6)
@@ -55,7 +56,7 @@ def decode1(width, height, pal, data, verify=True):
     with io.BytesIO(data) as stream:
         res = convert_to_pil_image(
             bpp_cost.decode1(width, height, len(pal.data), stream, strict=False),
-            size=(width, height)
+            size=(width, height),
         )
 
     if verify:
@@ -63,7 +64,7 @@ def decode1(width, height, pal, data, verify=True):
         with io.BytesIO(d_data) as stream:
             res2 = convert_to_pil_image(
                 bpp_cost.decode1(width, height, len(pal.data), stream, strict=False),
-                size=(width, height)
+                size=(width, height),
             )
         assert np.array_equal(np.asarray(res), np.asarray(res2))
         assert d_data == data, (len(d_data), len(data))
@@ -87,8 +88,8 @@ def decode16(width, height, pal, data):
         out = smap.decode_run_majmin(stream, width * height, bpp)
         return convert_to_pil_image(out, size=(width, height))
 
-def decode_frame(akhd, ci, cd, palette):
 
+def decode_frame(akhd, ci, cd, palette):
     width = int.from_bytes(ci[0:2], signed=False, byteorder='little')
     height = int.from_bytes(ci[2:4], signed=False, byteorder='little')
     xoff = int.from_bytes(ci[4:6], signed=False, byteorder='little')
@@ -106,7 +107,7 @@ def decode_frame(akhd, ci, cd, palette):
 def construct_palette(akpl_data, rgbs_data):
     palette = bytearray(0x300)
     for idx, color in enumerate(akpl_data):
-        palette[3*idx:3*(idx+1)] = rgbs_data[3*color:3*(color+1)]
+        palette[3 * idx : 3 * (idx + 1)] = rgbs_data[3 * color : 3 * (color + 1)]
     return palette
 
 
@@ -185,6 +186,7 @@ def read_akos_resource(akos, room_palette):
 def create_akof(offsets: Iterable[tuple[int, int]]):
     return b''.join(struct.Struct('<IH').pack(*offs) for offs in offsets)
 
+
 if __name__ == '__main__':
     import argparse
     import glob
@@ -196,7 +198,6 @@ if __name__ == '__main__':
     files = sorted(set(flatten(glob.iglob(r) for r in args.files)))
     print(files)
     for filename in files:
-
         print(filename)
 
         gameres = open_game_resource(filename)
@@ -211,7 +212,6 @@ if __name__ == '__main__':
         os.makedirs(f'AKOS_out/{basename}', exist_ok=True)
 
         for t in root:
-
             for lflf in get_rooms(t):
                 # print(lflf, lflf.attribs["path"])
                 _, palette, _, _ = read_room_settings(lflf)
@@ -220,7 +220,7 @@ if __name__ == '__main__':
                     if akos.attribs['gid'] not in {59, 60, 61, 564}:
                         continue
 
-                    print(akos, akos.attribs["path"])
+                    print(akos, akos.attribs['path'])
 
                     offset = 0
                     ci_offset = 0
@@ -244,16 +244,21 @@ if __name__ == '__main__':
                         offset = len(cdata)
                         ci_offset += 4
 
-                    os.makedirs(os.path.dirname(f'{basename}/{akos.attribs["path"]}'), exist_ok=True)
+                    os.makedirs(
+                        os.path.dirname(f'{basename}/{akos.attribs["path"]}'),
+                        exist_ok=True,
+                    )
                     write_file(
                         f'{basename}/{akos.attribs["path"]}',
                         sputm.mktag(
                             akos.tag,
                             sputm.write_chunks(
-                                sputm.mktag(e.tag, create_akof(offsets)) if e.tag == 'AKOF'
-                                else sputm.mktag(e.tag, cdata) if e.tag == 'AKCD'
+                                sputm.mktag(e.tag, create_akof(offsets))
+                                if e.tag == 'AKOF'
+                                else sputm.mktag(e.tag, cdata)
+                                if e.tag == 'AKCD'
                                 else sputm.mktag(e.tag, e.data)
                                 for e in akos
-                            )
+                            ),
                         ),
                     )

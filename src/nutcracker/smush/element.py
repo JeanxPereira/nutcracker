@@ -1,6 +1,6 @@
-from typing import Iterator
+from collections.abc import Iterator
 
-from .types import Element
+from nutcracker.kernel2.element import Element
 
 
 def check_tag(target: str, elem: Element) -> Element:
@@ -10,7 +10,7 @@ def check_tag(target: str, elem: Element) -> Element:
 
 
 def read_elements(target: str, elem: Element) -> Iterator[Element]:
-    return iter(check_tag(target, elem).children)
+    return check_tag(target, elem).children()
 
 
 def read_data(target: str, elem: Element) -> bytes:

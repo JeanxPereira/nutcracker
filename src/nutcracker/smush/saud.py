@@ -39,7 +39,7 @@ if __name__ == '__main__':
                         [
                             read_le_uint16(bytes(word))
                             for word in funcutils.grouper(data, 2)
-                        ]
+                        ],
                     )
                     continue
                 if tag == 'SDAT':
@@ -55,7 +55,7 @@ if __name__ == '__main__':
                         [
                             read_le_uint16(bytes(word))
                             for word in funcutils.grouper(data, 2)
-                        ]
+                        ],
                     )
                     continue
             with wave.open(f'sound/SDAT_{basename}.WAV', 'w') as wav:

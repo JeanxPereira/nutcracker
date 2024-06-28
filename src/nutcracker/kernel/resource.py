@@ -1,5 +1,5 @@
 import logging
-from typing import Iterable, Iterator, Tuple, Union
+from collections.abc import Iterable, Iterator
 
 from .align import align_read, align_write
 from .buffer import BufferLike
@@ -11,7 +11,7 @@ def read_chunks(
     cfg: _ChunkSetting,
     buffer: BufferLike,
     offset: int = 0,
-) -> Iterator[Tuple[int, Chunk]]:
+) -> Iterator[tuple[int, Chunk]]:
     """Read all chunks from given bytes."""
     data = memoryview(buffer)
     max_size = len(data)
@@ -36,7 +36,7 @@ def workaround_x80(cfg: _ChunkSetting, buffer: BufferLike, offset: int = 0) -> i
     return offset
 
 
-def write_chunks(cfg: _ChunkSetting, chunks: Iterable[Union[bytes, Chunk]]) -> bytes:
+def write_chunks(cfg: _ChunkSetting, chunks: Iterable[bytes | Chunk]) -> bytes:
     """Write chunks sequence to bytes with given data alignment."""
     stream = bytearray()
     for chunk in chunks:

@@ -2,36 +2,39 @@ import io
 import os
 import struct
 from collections import defaultdict
-from nutcracker.earwax.older_room import read_room
+from collections.abc import Iterable, Iterator
 
+from nutcracker.earwax.older_room import read_room
+from nutcracker.earwax.resource import create_element
+from nutcracker.kernel2.element import Element
 from nutcracker.utils.fileio import read_file
 from nutcracker.utils.funcutils import flatten
-from nutcracker.kernel.index import create_element
 
 from .preset import earwax
-
 
 UINT16LE = struct.Struct('<H')
 UINT32LE = struct.Struct('<I')
 
 
-def read_dir(stream):
+def read_dir(stream: IO[bytes]) -> Iterator[tuple[int, tuple[int, int]]]:
     num = ord(stream.read(1))
     rnums = list(stream.read(num))
     offs = [UINT16LE.unpack(stream.read(UINT16LE.size))[0] for _ in range(num)]
-    return enumerate(zip(rnums, offs))
+    return enumerate(zip(rnums, offs, strict=True))
+
 
 def read_block(stream):
     return stream.read(UINT16LE.unpack(stream.read(UINT16LE.size))[0] - UINT16LE.size)
 
 
-def write_block(data):
+def write_block(data: bytes) -> bytes:
     return UINT16LE.pack(len(data) + UINT16LE.size) + data
 
 
 def dump_resources(
-    root, basename,
-):
+    root: Iterable[Element],
+    basename: str,
+) -> None:
     os.makedirs(basename, exist_ok=True)
     with open(os.path.join(basename, 'rpdump.xml'), 'w') as f:
         for disk in root:
@@ -53,12 +56,11 @@ def save_tree_data_only(cfg, element, basedir='.'):
             f.write(element.data)
 
 
-def mkblock(data):
+def mkblock(data: bytes) -> bytes:
     return UINT16LE.pack(len(data) + UINT16LE.size) + data
 
 
-def open_game_resource(filename: str, chiper_key=0x00):
-
+def open_game_resource(filename: str, chiper_key: int = 0x00) -> Iterator[Element]:
     index = read_file(filename, key=chiper_key)
 
     basename = os.path.basename(filename)
@@ -75,7 +77,9 @@ def open_game_resource(filename: str, chiper_key=0x00):
             raise ValueError(f'bad magic: {magic}')
 
         num_objects = UINT16LE.unpack(stream.read(UINT16LE.size))[0]
-        objects = [UINT32LE.unpack(stream.read(UINT32LE.size))[0] for _ in range(num_objects)]
+        objects = [
+            UINT32LE.unpack(stream.read(UINT32LE.size))[0] for _ in range(num_objects)
+        ]
 
         rooms = dict(read_dir(stream))
         costumes = dict(read_dir(stream))
@@ -113,36 +117,48 @@ def open_game_resource(filename: str, chiper_key=0x00):
         print(fname, rm_info)
         room = create_element(
             0,
-            earwax.untag(earwax.mktag('LF', room_data)),
+            earwax.mktag('LF', room_data),
             gid=room_id,
-            path=f'LFv3_{room_id:04d}'
+            path=f'LFv3_{room_id:04d}',
         )
         with io.BytesIO(room_data) as stream:
             rm_block = read_block(stream)
             rm_elem = create_element(
                 0,
-                earwax.untag(earwax.mktag('RO', mkblock(rm_block))),
-                path=os.path.join(room.attribs['path'], f'ROv3'),
+                earwax.mktag('RO', mkblock(rm_block)),
+                path=os.path.join(room.attribs['path'], 'ROv3'),
             )
-            room.children.append(rm_elem)
+            room.add_child(rm_elem)
 
             rm_elem = read_room(rm_elem)
 
             while stream.tell() < len(room_data):
                 offset = stream.tell()
-                idx = next(((off, bid, tag) for off, bid, tag in ind[room_id] if off == offset), None)
+                idx = next(
+                    (
+                        (off, bid, tag)
+                        for off, bid, tag in ind[room_id]
+                        if off == offset
+                    ),
+                    None,
+                )
                 block = read_block(stream)
 
                 if not idx:
                     idx = (offset, None, 'UN')
                 # print(offset, idx, block[:16], ind[room_id])
                 assert offset == idx[0], (offset, idx[0])
-                room.children.append(
+                room.add_child(
                     create_element(
                         offset,
-                        earwax.untag(earwax.mktag(idx[2], mkblock(block))),
-                        path=os.path.join(room.attribs['path'], f'{idx[2]}v3_{idx[1]:04d}' if idx[1] else f'UN_{offset:04x}'),
-                        **({'gid':idx[1]} if idx[1] else {}),
+                        earwax.mktag(idx[2], mkblock(block)),
+                        path=os.path.join(
+                            room.attribs['path'],
+                            f'{idx[2]}v3_{idx[1]:04d}'
+                            if idx[1]
+                            else f'UN_{offset:04x}',
+                        ),
+                        **({'gid': idx[1]} if idx[1] else {}),
                     ),
                 )
 

@@ -1,13 +1,49 @@
-
-from collections import deque
 import os
+from collections import deque
+
 from nutcracker.earwax.older import open_game_resource, read_config
-from nutcracker.earwax.windex_v4 import OPCODES_v4, dump_script_file, o4_actorOps, o4_pickupObject, o4_roomOps_wd, o4_saveLoadGame, parse_verb_meta_v4, script_map
-from nutcracker.sputm.script.bytecode import BytecodeParseError, descumm_iter, get_argtype
-from nutcracker.sputm.script.opcodes_v5 import BYTE, IMBYTE, PARAMS, RESULT, SUBMASK, WORD, flatop, mop, o5_jumpRelative, o5_multiply, o5_print, o5_resourceRoutines, realize_v5
+from nutcracker.earwax.windex_v4 import (
+    OPCODES_v4,
+    dump_script_file,
+    o4_actorOps,
+    o4_pickupObject,
+    o4_roomOps_wd,
+    o4_saveLoadGame,
+    parse_verb_meta_v4,
+    script_map,
+)
+from nutcracker.sputm.script.bytecode import (
+    BytecodeParseError,
+    descumm_iter,
+    get_argtype,
+)
+from nutcracker.sputm.script.opcodes_v5 import (
+    BYTE,
+    IMBYTE,
+    PARAMS,
+    RESULT,
+    SUBMASK,
+    WORD,
+    flatop,
+    mop,
+    o5_jumpRelative,
+    o5_multiply,
+    o5_print,
+    o5_resourceRoutines,
+    realize_v5,
+)
 from nutcracker.sputm.script.parser import RefOffset
 from nutcracker.sputm.script.shared import BytecodeError, ScriptError, realize_refs
-from nutcracker.sputm.windex_v5 import ConditionalJump, UnconditionalJump, fstat, print_asts, print_locals, ops, semantic_key, l_vars
+from nutcracker.sputm.windex_v5 import (
+    ConditionalJump,
+    UnconditionalJump,
+    fstat,
+    l_vars,
+    ops,
+    print_asts,
+    print_locals,
+    semantic_key,
+)
 from nutcracker.utils.funcutils import flatten
 
 
@@ -71,14 +107,22 @@ def o3_getObjectOwner(opcode, stream):
 
 def o3_roomOps(opcode, stream):
     return flatop(
-        ('o3_roomOps', {0x33, 0x73, 0xB3, 0xF3}, PARAMS(2 * WORD), SUBMASK(0x1F, {
-            0x01: mop('SO_ROOM_SCROLL'),
-            0x02: mop('SO_ROOM_COLOR'),
-            0x03: mop('SO_ROOM_SCREEN'),
-            0x04: mop('SO_ROOM_PALETTE'),
-            0x05: mop('SO_ROOM_SHAKE_ON'),
-            0x06: mop('SO_ROOM_SHAKE_OFF'),
-        })),
+        (
+            'o3_roomOps',
+            {0x33, 0x73, 0xB3, 0xF3},
+            PARAMS(2 * WORD),
+            SUBMASK(
+                0x1F,
+                {
+                    0x01: mop('SO_ROOM_SCROLL'),
+                    0x02: mop('SO_ROOM_COLOR'),
+                    0x03: mop('SO_ROOM_SCREEN'),
+                    0x04: mop('SO_ROOM_PALETTE'),
+                    0x05: mop('SO_ROOM_SHAKE_ON'),
+                    0x06: mop('SO_ROOM_SHAKE_OFF'),
+                },
+            ),
+        ),
         fallback=o4_actorOps,
     )(opcode, stream)
 
@@ -98,16 +142,18 @@ def o3_waitForActor(opcode, stream):
     )(opcode, stream)
 
 
-OPCODES_v3 = realize_v5({
-    **OPCODES_v4,
-    0x02: o3_startMusic,
-    0x0C: o3_waitForSentence,
-    0x10: o3_getObjectOwner,
-    0x13: o3_roomOps,
-    0x14: o3_print,
-    0x18: o3_jumpRelative,
-    0x1B: o3_waitForActor,
-})
+OPCODES_v3 = realize_v5(
+    {
+        **OPCODES_v4,
+        0x02: o3_startMusic,
+        0x0C: o3_waitForSentence,
+        0x10: o3_getObjectOwner,
+        0x13: o3_roomOps,
+        0x14: o3_print,
+        0x18: o3_jumpRelative,
+        0x1B: o3_waitForActor,
+    },
+)
 
 
 obj_names = {}
@@ -138,7 +184,9 @@ def get_elem_info(elem):
         obj_names[gid] = obj_name.decode('ascii', errors='ignore')
         entries = {(off - len(obj_name) + 1): idx[0] for idx, off in pref}
     else:
-        scr_id = int.from_bytes(pref, byteorder='little', signed=False) if pref else None
+        scr_id = (
+            int.from_bytes(pref, byteorder='little', signed=False) if pref else None
+        )
         assert scr_id is None or scr_id == gid
     return script_data, gid, entries
 
@@ -224,7 +272,10 @@ if __name__ == '__main__':
         root = open_game_resource(filename)
         print(rnam)
 
-        script_dir = os.path.join('scripts', os.path.basename(os.path.dirname(filename)))
+        script_dir = os.path.join(
+            'scripts',
+            os.path.basename(os.path.dirname(filename)),
+        )
         os.makedirs(script_dir, exist_ok=True)
 
         for room in root:

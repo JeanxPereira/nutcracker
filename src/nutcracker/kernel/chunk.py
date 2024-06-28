@@ -1,7 +1,8 @@
 import builtins
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from functools import cached_property
-from typing import IO, Iterator, NamedTuple, Protocol, Sequence, Union, overload
+from typing import IO, NamedTuple, Protocol, overload
 
 from .buffer import BufferLike, Splicer, splice
 from .structured import Structured
@@ -13,7 +14,7 @@ class ChunkHeader(NamedTuple):
 
 
 @dataclass(frozen=True)
-class Chunk(object):
+class Chunk:
     tag: str
     buffer: BufferLike
     slice: Splicer
@@ -28,33 +29,29 @@ class Chunk(object):
     def __bytes__(self) -> bytes:
         return bytes(self.buffer)
 
-    def __iter__(self) -> Iterator[Union[str, bytes]]:
+    def __iter__(self) -> Iterator[str | bytes]:
         return iter((self.tag, self.data))
 
     @overload
-    def __getitem__(self, index: int) -> Union[str, bytes]:
-        ...
+    def __getitem__(self, index: int) -> str | bytes: ...
 
     @overload
-    def __getitem__(self, index: builtins.slice) -> Sequence[Union[str, bytes]]:
-        ...
+    def __getitem__(self, index: builtins.slice) -> Sequence[str | bytes]: ...
 
     def __getitem__(
         self,
-        index: Union[builtins.slice, int],
-    ) -> Union[Sequence[Union[str, bytes]], str, bytes]:
+        index: builtins.slice | int,
+    ) -> Sequence[str | bytes] | str | bytes:
         return tuple(self)[index]
 
     def __repr__(self) -> str:
-        return 'Chunk<{tag}>[{size}]'.format(tag=self.tag, size=len(self))
+        return f'Chunk<{self.tag}>[{len(self)}]'
 
 
 class ChunkFactory(Protocol):
-    def untag(self, buffer: BufferLike, offset: int = 0) -> Chunk:
-        ...
+    def untag(self, buffer: BufferLike, offset: int = 0) -> Chunk: ...
 
-    def mktag(self, tag: str, data: bytes) -> bytes:
-        ...
+    def mktag(self, tag: str, data: bytes) -> bytes: ...
 
 
 @dataclass(frozen=True)
@@ -89,7 +86,9 @@ class StructuredChunk(ChunkFactory, _StructuredChunkHeader):
     def mktag(self, tag: str, data: bytes) -> bytes:
         return self.pack(ChunkHeader(tag.encode('ascii'), len(data) + self.size)) + data
 
+
 NULL_TAG = b'_'
+
 
 @dataclass(frozen=True)
 class SizeFixedChunk(StructuredChunk):
@@ -105,6 +104,7 @@ class SizeFixedChunk(StructuredChunk):
         if data.etag == NULL_TAG:
             return self._struct.pack(ChunkHeader(b'', 0))
         return self._struct.pack(ChunkHeader(data.etag, data.size - self.size_fix))
+
 
 @dataclass(frozen=True)
 class OldSputmChunk(StructuredChunk):

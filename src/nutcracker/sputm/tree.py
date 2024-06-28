@@ -1,14 +1,18 @@
 #!/usr/bin/env python3
 
-import io
 import os
 import struct
+from collections.abc import Callable, Container, Iterator, Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Mapping, Optional, Set, Tuple
+from typing import Any
 
-from nutcracker.utils.fileio import read_file
+from nutcracker.kernel2.chunk import Chunk
+from nutcracker.kernel2.element import Element
+from nutcracker.kernel2.fileio import ResourceFile
+from nutcracker.kernel2.preset import Preset
 
 from .index import (
+    IdGen,
     compare_pid_off,
     read_directory,
     read_index_he,
@@ -16,10 +20,9 @@ from .index import (
     read_index_v7,
     read_index_v8,
 )
-from .schema import SCHEMA
 from .preset import sputm
 from .resource import Game, load_resource
-from .types import Chunk
+from .schema import SCHEMA
 
 UINT32LE = struct.Struct('<I')
 
@@ -39,99 +42,118 @@ class GameResource:
     idgens: Any
 
     @property
-    def basename(self):
+    def basename(self) -> str:
         return self.game.basename
 
     @property
-    def root(self):
+    def root(self) -> Iterator[Element]:
         return read_game_resources(self.game, self.config, self.idgens)
 
-    def read_resources(self, **kwargs):
+    def read_resources(self, **kwargs: Any) -> Iterator[Element]:
         return read_game_resources(self.game, self.config, self.idgens, **kwargs)
 
 
-def save_tree(cfg, element, basedir='.'):
+def save_tree(
+    cfg: Preset,
+    element: Element | None,
+    basedir: str | os.PathLike[str] = '.',
+) -> None:
     if not element:
         return
+    print(element, element.attribs)
     path = os.path.join(basedir, element.attribs['path'])
-    if element.children:
+    children = list(element.children())
+    if children:
         os.makedirs(path, exist_ok=True)
-        for c in element.children:
+        for c in children:
             save_tree(cfg, c, basedir=basedir)
     else:
         with open(path, 'wb') as f:
-            f.write(cfg.mktag(element.tag, element.data))
+            f.write(bytes(cfg.mktag(element.tag, element.data)))
 
 
-def read_game_resources(game: Game, config: GameResourceConfig, idgens, **kwargs):
+def read_game_resources(
+    game: Game, config: GameResourceConfig, idgens: dict[str, IdGen], **kwargs: Any
+) -> Iterator[Element]:
     _, *disks = game.disks
 
     for didx, disk in enumerate(disks):
+        with ResourceFile.load(
+            os.path.join(game.basedir, disk), key=game.chiper_key
+        ) as resource:
+            # # commented out, use pre-calculated index instead,
+            # # as calculating is time-consuming
+            # s = sputm.generate_schema(resource)
+            # pprint.pprint(s)
+            # root = sputm.map_chunks(resource, idgen=idgens, schema=s)
 
-        resource = read_file(os.path.join(game.basedir, disk), key=game.chiper_key)
+            paths: dict[str, Chunk] = {}
+            wraps: dict[str, dict[int, int]] = {}
 
-        # # commented out, use pre-calculated index instead,
-        # # as calculating is time-consuming
-        # s = sputm.generate_schema(resource)
-        # pprint.pprint(s)
-        # root = sputm.map_chunks(resource, idgen=idgens, schema=s)
+            def update_element_path(
+                parent: Element | None,
+                chunk: Chunk,
+                offset: int,
+            ) -> dict[str, Any]:
+                if chunk.tag == 'LOFF':
+                    # should not happen in HE games
 
-        paths: Dict[str, Chunk] = {}
-        wraps: Dict[str, Dict[int, int]] = {}
+                    offs = dict(read_directory(chunk.data))
 
-        def update_element_path(parent, chunk, offset):
+                    # # to ignore cloned rooms
+                    # droo = idgens['LFLF']
+                    # droo = {k: v for k, v  in droo.items() if v == (didx + 1, 0)}
+                    # droo = {k: (disk, offs[k]) for k, (disk, _)  in droo.items()}
 
-            if chunk.tag == 'LOFF':
-                # should not happen in HE games
+                    droo = {k: (didx + 1, v) for k, v in offs.items()}
+                    idgens['LFLF'] = compare_pid_off(droo, 16 - config.base_fix)
 
-                offs = dict(read_directory(chunk.data))
+                get_gid = idgens.get(chunk.tag)
+                gid: int | None
+                if not parent:
+                    gid = didx + 1
+                elif parent.attribs['path'] in wraps:
+                    gid = wraps[parent.attribs['path']].get(offset)
+                else:
+                    gid = get_gid and get_gid(
+                        parent and parent.attribs['gid'],
+                        chunk.data,
+                        offset,
+                    )
 
-                # # to ignore cloned rooms
-                # droo = idgens['LFLF']
-                # droo = {k: v for k, v  in droo.items() if v == (didx + 1, 0)}
-                # droo = {k: (disk, offs[k]) for k, (disk, _)  in droo.items()}
-
-                droo = {k: (didx + 1, v) for k, v in offs.items()}
-                idgens['LFLF'] = compare_pid_off(droo, 16 - config.base_fix)
-
-            get_gid = idgens.get(chunk.tag)
-            if not parent:
-                gid = didx + 1
-            elif parent.attribs['path'] in wraps:
-                gid = wraps[parent.attribs['path']].get(offset)
-            else:
-                gid = get_gid and get_gid(
-                    parent and parent.attribs['gid'], chunk.data, offset
+                base = chunk.tag + (
+                    f'_{gid:04d}'
+                    if gid is not None
+                    else ''
+                    if not get_gid
+                    else f'_o_{offset:04X}'
                 )
 
-            base = chunk.tag + (
-                f'_{gid:04d}'
-                if gid is not None
-                else ''
-                if not get_gid
-                else f'_o_{offset:04X}'
-            )
+                dirname = parent.attribs['path'] if parent else ''
+                path = os.path.join(dirname, base)
 
-            dirname = parent.attribs['path'] if parent else ''
-            path = os.path.join(dirname, base)
+                if path in paths:
+                    path += 'd'
+                # assert path not in paths, path
+                paths[path] = chunk
 
-            if path in paths:
-                path += 'd'
-            # assert path not in paths, path
-            paths[path] = chunk
+                if chunk.tag == 'WRAP':
+                    _, offs = sputm.untag(chunk.data)
+                    size = len(offs.data) // 4
+                    offs = dict(
+                        zip(
+                            struct.unpack(f'<{size}I', offs.data),
+                            range(1, size + 1),
+                            strict=True,
+                        ),
+                    )
+                    wraps[path] = offs
 
-            if chunk.tag == 'WRAP':
-                offs = sputm.untag(chunk.data)
-                size = len(offs.data) // 4
-                offs = dict(
-                    zip(struct.unpack(f'<{size}I', offs.data), range(1, size + 1))
-                )
-                wraps[path] = offs
+                res = {'path': path, 'gid': gid}
+                return res
 
-            res = {'path': path, 'gid': gid}
-            return res
-
-        yield from sputm(**kwargs).map_chunks(resource, extra=update_element_path)
+            # yield from sputm(**kwargs).map_chunks(resource, extra=update_element_path)
+            yield from sputm(**kwargs, extra=update_element_path).map_chunks(resource)
 
 
 def create_config(game: Game) -> GameResourceConfig:
@@ -164,9 +186,9 @@ def create_config(game: Game) -> GameResourceConfig:
 
 
 def open_game_resource(
-    filename: str,
-    version: Optional[Tuple[int, int]] = None,
-    chiper_key: Optional[int] = None,
+    filename: str | os.PathLike[str],
+    version: tuple[int, int] | None = None,
+    chiper_key: int | None = None,
 ) -> GameResource:
     game = load_resource(filename, chiper_key=chiper_key)
 
@@ -180,8 +202,10 @@ def open_game_resource(
 
 
 def dump_resources(
-    gameres: GameResource, basename: str, schema: Optional[Mapping[str, Set]] = None
-):
+    gameres: GameResource,
+    basename: str,
+    schema: Mapping[str, set] | None = None,
+) -> None:
     schema = schema or narrow_schema(
         SCHEMA,
         {'LECF', 'LFLF', 'RMDA', 'ROOM'},
@@ -194,7 +218,10 @@ def dump_resources(
             save_tree(sputm, disk, basedir=basename)
 
 
-def narrow_schema(schema, trail):
+def narrow_schema(
+    schema: dict[str, set[str]],
+    trail: Container[str],
+) -> dict[str, set[str]]:
     new_schema = dict(schema)
     for container in schema:
         if container not in trail:

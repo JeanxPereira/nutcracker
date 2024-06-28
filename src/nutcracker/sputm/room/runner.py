@@ -7,8 +7,7 @@ from nutcracker.sputm.room.orgroom import make_room_images_patch
 from nutcracker.sputm.room.pproom import extract_room_images
 from nutcracker.utils.fileio import write_file
 
-from ..tree import open_game_resource, narrow_schema
-from ..schema import SCHEMA
+from ..tree import open_game_resource
 
 app = typer.Typer()
 
@@ -60,7 +59,7 @@ def encode(
         root,
         os.path.join(basename, 'IMAGES'),
         gameres.rooms,
-        gameres.game.version
+        gameres.game.version,
     ):
         res_path = os.path.join(dirname, path)
         os.makedirs(os.path.dirname(res_path), exist_ok=True)

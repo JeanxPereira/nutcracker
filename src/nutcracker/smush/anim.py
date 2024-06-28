@@ -1,11 +1,13 @@
 import itertools
-from typing import Any, Dict, Iterator, NamedTuple, Optional
+from collections.abc import Iterable, Iterator
+from typing import Any, NamedTuple
 
+from nutcracker.kernel2.chunk import ArrayBuffer, Chunk
+from nutcracker.kernel2.element import Element
+from nutcracker.kernel2.fileio import ResourceFile
 from nutcracker.smush import ahdr
 from nutcracker.smush.element import read_data, read_elements
 from nutcracker.smush.preset import smush
-from nutcracker.smush.types import Chunk, Element
-from nutcracker.utils.fileio import read_file
 
 
 class SmushAnimation(NamedTuple):
@@ -22,7 +24,7 @@ def verify_nframes(frames: Iterator[Element], nframes: int) -> Iterator[Element]
 
 def verify_maxframe(
     frames: Iterator[Element],
-    limit: Optional[int],
+    limit: int | None,
 ) -> Iterator[Element]:
     maxframe = 0
     for elem in frames:
@@ -41,25 +43,30 @@ def parse(root: Element) -> SmushAnimation:
     return SmushAnimation(header, frames)
 
 
-def compose(header: ahdr.AnimationHeader, frames: Iterator[bytes]) -> bytes:
-    bheader = smush.mktag('AHDR', ahdr.to_bytes(header))
-    return smush.mktag('ANIM', smush.write_chunks(itertools.chain([bheader], frames)))
+def compose(header: ahdr.AnimationHeader, frames: Iterable[Chunk]) -> bytes:
+    bheader = smush.mktag('AHDR', memoryview(ahdr.to_bytes(header)))
+    return bytes(
+        smush.mktag(
+            'ANIM', memoryview(smush.write_chunks(itertools.chain([bheader], frames)))
+        ),
+    )
 
 
-def from_bytes(resource: bytes) -> Element:
+def from_bytes(resource: ArrayBuffer) -> Element:
     it = itertools.count()
 
     def set_frame_id(
-        parent: Optional[Element],
+        parent: Element | None,
         chunk: Chunk,
         offset: int,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         if chunk.tag != 'FRME':
             return {}
         return {'id': next(it)}
 
-    return next(smush.map_chunks(resource, extra=set_frame_id))
+    return next(smush(extra=set_frame_id).map_chunks(resource))
 
 
 def from_path(path: str) -> Element:
-    return from_bytes(read_file(path))
+    with ResourceFile.load(path) as res:
+        return from_bytes(res)

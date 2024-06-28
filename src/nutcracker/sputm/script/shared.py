@@ -1,15 +1,16 @@
-from collections import deque
 import io
+from collections import deque
+from collections.abc import Iterator, Mapping
+
 try:
     # Python 3.10+
     from itertools import pairwise
 except:
     # Python 3.9
     from more_itertools import pairwise
-from typing import Iterator, Mapping, Union
+
 from nutcracker.sputm.script.bytecode import BytecodeParseError
 from nutcracker.sputm.script.opcodes_v5 import SomeOp
-
 from nutcracker.sputm.script.parser import Statement
 from nutcracker.utils.funcutils import grouper
 
@@ -28,19 +29,20 @@ def parse_verb_meta(meta):
             key = stream.read(1)
             if key in {b'\0'}:  # , b'\xFF'}:
                 break
-            entry = int.from_bytes(
-                stream.read(2), byteorder='little', signed=False
-            )
+            entry = int.from_bytes(stream.read(2), byteorder='little', signed=False)
             yield key, entry - len(meta)
         assert stream.read() == b''
 
 
-def canonical_bytecode(bytecode: Mapping[int, Union[Statement, SomeOp]], base_offset: int = 0) -> Iterator[str]:
+def canonical_bytecode(
+    bytecode: Mapping[int, Statement | SomeOp],
+    base_offset: int = 0,
+) -> Iterator[str]:
     for off, stat in bytecode.items():
         byte_width = 4
         hexdump = ' |\n\t            '.join(
             bytes(x for x in part if x is not None)[::-1]
-            .hex(" ")
+            .hex(' ')
             .upper()
             .rjust(3 * byte_width - 1)
             for part in reversed(list(grouper(stat.to_bytes()[::-1], byte_width)))
@@ -51,7 +53,9 @@ def canonical_bytecode(bytecode: Mapping[int, Union[Statement, SomeOp]], base_of
 class BytecodeError(ValueError):
     def __init__(self, cause: BytecodeParseError, path, asts):
         block = '\n'.join(print_asts('\t', asts))
-        bytecode_str = '\n\t'.join(canonical_bytecode(cause.bytecode, cause.base_offset))
+        bytecode_str = '\n\t'.join(
+            canonical_bytecode(cause.bytecode, cause.base_offset),
+        )
         msg = (
             '\n'
             f'Script path: {path}\n'

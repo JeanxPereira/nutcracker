@@ -16,14 +16,14 @@ glyph4_xy = tuple(
     zip(
         (0, 1, 2, 3, 3, 3, 3, 2, 1, 0, 0, 0, 1, 2, 2, 1),
         (0, 0, 0, 0, 1, 2, 3, 3, 3, 3, 2, 1, 1, 1, 2, 2),
-    )
+    ),
 )
 
 glyph8_xy = tuple(
     zip(
         (0, 2, 5, 7, 7, 7, 7, 7, 7, 5, 2, 0, 0, 0, 0, 0),
         (0, 0, 0, 0, 1, 3, 4, 6, 7, 7, 7, 7, 6, 4, 3, 1),
-    )
+    ),
 )
 
 # fmt: off
@@ -150,21 +150,21 @@ def which_direction(edge0, edge1):
             (edge1 == GlyphEdge.LEFT_EDGE and edge0 == GlyphEdge.RIGHT_EDGE),
             (edge0 == GlyphEdge.BOTTOM_EDGE and edge1 != GlyphEdge.TOP_EDGE),
             (edge1 == GlyphEdge.BOTTOM_EDGE and edge0 != GlyphEdge.TOP_EDGE),
-        )
+        ),
     ):
         return GlyphDir.DIR_UP
     elif any(
         (
             (edge0 == GlyphEdge.TOP_EDGE and edge1 != GlyphEdge.BOTTOM_EDGE),
             (edge1 == GlyphEdge.TOP_EDGE and edge0 != GlyphEdge.BOTTOM_EDGE),
-        )
+        ),
     ):
         return GlyphDir.DIR_DOWN
     elif any(
         (
             (edge0 == GlyphEdge.LEFT_EDGE and edge1 != GlyphEdge.RIGHT_EDGE),
             (edge1 == GlyphEdge.LEFT_EDGE and edge0 != GlyphEdge.RIGHT_EDGE),
-        )
+        ),
     ):
         return GlyphDir.DIR_LEFT
     elif any(
@@ -173,7 +173,7 @@ def which_direction(edge0, edge1):
             (edge1 == GlyphEdge.TOP_EDGE and edge0 == GlyphEdge.BOTTOM_EDGE),
             (edge0 == GlyphEdge.RIGHT_EDGE and edge1 != GlyphEdge.LEFT_EDGE),
             (edge1 == GlyphEdge.RIGHT_EDGE and edge0 != GlyphEdge.LEFT_EDGE),
-        )
+        ),
     ):
         return GlyphDir.DIR_RIGHT
 
@@ -295,7 +295,6 @@ def decode47(src, width, height):
         out[:, :] = gfx.repeat(2, axis=0).repeat(2, axis=1)
     elif compression == 2:
         if seq_nb == _prev_seq + 1:
-
             logging.debug('FIRST DECODE')
             decode2(out, gfx_data, width, height, params)
 
@@ -319,7 +318,8 @@ def decode47(src, width, height):
         out[:, :] = _bprev1
     elif compression == 5:
         out[:, :] = np.frombuffer(
-            bomp.decode_line(gfx_data, decoded_size), dtype=np.uint8
+            bomp.decode_line(gfx_data, decoded_size),
+            dtype=np.uint8,
         ).reshape(_height, _width)
     else:
         raise ValueError(f'Unknown compression: {compression}')
@@ -347,7 +347,10 @@ def rollable_view(ndarr, max_overflow=None):
     rows, cols = ndarr.shape
     ncols = cols + max_overflow if max_overflow else rows * cols
     return np.lib.stride_tricks.as_strided(
-        ndarr, (rows, ncols), ndarr.strides, writeable=False
+        ndarr,
+        (rows, ncols),
+        ndarr.strides,
+        writeable=False,
     )
 
 
@@ -362,7 +365,7 @@ def decode2(out, src, width, height, params):
 
     start = datetime.now()
     with io.BytesIO(src) as stream:
-        for (yloc, xloc) in get_locs(width, height, 8):
+        for yloc, xloc in get_locs(width, height, 8):
             process_block(out[yloc : yloc + 8, xloc : xloc + 8], stream, yloc, xloc, 8)
     print('processing time', str(datetime.now() - start))
 
@@ -437,7 +440,7 @@ def encode2(frame, width, height, params):
 
     start = datetime.now()
     with io.BytesIO() as stream:
-        for (yloc, xloc) in get_locs(width, height, 8):
+        for yloc, xloc in get_locs(width, height, 8):
             encode_block(frame[yloc : yloc + 8, xloc : xloc + 8], stream, yloc, xloc, 8)
         print('processing time', str(datetime.now() - start))
         return stream.getvalue()
@@ -502,7 +505,7 @@ def encode_block(frame, stream, yloc, xloc, size):
     if size == 2:
         stream.write(frame.tobytes())
         logging.debug(frame)
-        logging.debug((frame.tobytes()))
+        logging.debug(frame.tobytes())
         return
     size >>= 1
     encode_block(frame[:size, :size], stream, yloc, xloc, size)

@@ -1,11 +1,11 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from operator import attrgetter
 from struct import Struct
-from typing import Mapping, Optional, Set
 
 from .buffer import BufferLike
-from .chunk import Chunk, ChunkFactory, ChunkHeader, OldSputmChunk, SizeFixedChunk, StructuredChunk
+from .chunk import Chunk, ChunkFactory, ChunkHeader, OldSputmChunk, SizeFixedChunk
 from .structured import StructuredTuple
 
 SCUMM_CHUNK_HEADER = StructuredTuple(('size', 'etag'), Struct('<I2s'), ChunkHeader)
@@ -29,14 +29,14 @@ class _ChunkSetting(ChunkFactory):
 
     align: int = 2
     chunk: ChunkFactory = IFF_CHUNK_EX
-    skip_byte: Optional[int] = None
+    skip_byte: int | None = None
     logger: logging.Logger = logging.root
 
     def untag(self, buffer: BufferLike, offset: int = 0) -> Chunk:
         """Read chunk from given buffer."""
         chunk = self.chunk.untag(buffer, offset=offset)
         if self.chunk.mktag(chunk.tag, chunk.data) != bytes(chunk):
-            self.logger.warning('Possible mismatch when re-encoding {}'.format(chunk))
+            self.logger.warning(f'Possible mismatch when re-encoding {chunk}')
         return chunk
 
     def mktag(self, tag: str, data: bytes) -> bytes:
@@ -59,6 +59,6 @@ class _IndexSetting(_ChunkSetting):
     max_depth: limit levels of container chunks to index, None for unlimited
     """
 
-    schema: Mapping[str, Set[str]] = field(default_factory=dict)
+    schema: Mapping[str, set[str]] = field(default_factory=dict)
     strict: bool = False
-    max_depth: Optional[int] = None
+    max_depth: int | None = None

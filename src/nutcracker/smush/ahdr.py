@@ -1,7 +1,6 @@
 import io
 import struct
 from dataclasses import dataclass, replace
-from typing import Optional
 
 from nutcracker.kernel.structured import StructuredTuple
 
@@ -9,21 +8,22 @@ PALETTE_SIZE = 0x300
 
 
 @dataclass(frozen=True)
-class AnimationHeaderV2(object):
-    framerate: Optional[int] = None
-    maxframe: Optional[int] = None
-    samplerate: Optional[int] = None
-    dummy2: Optional[int] = None
-    dummy3: Optional[int] = None
+class AnimationHeaderV2:
+    framerate: int | None = None
+    maxframe: int | None = None
+    samplerate: int | None = None
+    dummy2: int | None = None
+    dummy3: int | None = None
 
+NO_AHDR_V2 = AnimationHeaderV2()
 
 @dataclass(frozen=True)
-class AnimationHeader(object):
+class AnimationHeader:
     version: int
     nframes: int
     dummy: int
     palette: bytes
-    v2: AnimationHeaderV2 = AnimationHeaderV2()
+    v2: AnimationHeaderV2 = NO_AHDR_V2
 
 
 AHDR_V1 = StructuredTuple(

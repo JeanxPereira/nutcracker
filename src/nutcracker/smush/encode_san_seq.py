@@ -4,16 +4,16 @@ import glob
 import os
 import struct
 from collections import deque
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import asdict, dataclass, replace
 from itertools import chain
-from typing import Deque, Iterable, Iterator, List, Optional, Sequence, Set
 
 import numpy as np
 from PIL import Image
 
 from nutcracker.codex.codex import get_encoder
 from nutcracker.graphics.image import ImagePosition
-from nutcracker.kernel.element import Element
+from nutcracker.kernel2.element import Element
 from nutcracker.smush import ahdr, anim, fobj
 from nutcracker.smush.preset import smush
 from nutcracker.utils.fileio import write_file
@@ -22,10 +22,10 @@ UINT16LE = struct.Struct('<H')
 
 
 @dataclass(frozen=True)
-class FrameGenCtx(object):
+class FrameGenCtx:
     idx: int
-    frame: Optional[Element] = None
-    seq_ind: Optional[int] = None
+    frame: Element | None = None
+    seq_ind: int | None = None
 
 
 def convert_fobj_meta(datam: bytes) -> int:
@@ -39,7 +39,7 @@ def convert_fobj_meta(datam: bytes) -> int:
 
 def decode_frame(header: ahdr.AnimationHeader, idx: int, frame: Element) -> FrameGenCtx:
     ctx = FrameGenCtx(idx=idx, frame=frame)
-    for comp in frame.children:
+    for comp in frame.children():
         if comp.tag == 'FOBJ':
             decoded = convert_fobj_meta(comp.data)
             ctx = replace(ctx, seq_ind=decoded)
@@ -53,7 +53,7 @@ def decode_frame(header: ahdr.AnimationHeader, idx: int, frame: Element) -> Fram
 def get_sequence_frames(
     header: ahdr.AnimationHeader,
     frames: Iterator[FrameGenCtx],
-    saved: Deque[FrameGenCtx],
+    saved: deque[FrameGenCtx],
 ) -> Iterator[FrameGenCtx]:
     assert not saved
     for frame in frames:
@@ -83,8 +83,8 @@ def encode_fake(image: Sequence[Sequence[int]], chunk: bytes) -> bytes:
 
 def encode_seq(sequence: Iterable[FrameGenCtx], directory: str) -> Iterator[bytes]:
     for frame in sequence:
-        fdata: List[bytes] = []
-        for comp in frame.frame:
+        fdata: list[bytes] = []
+        for comp in frame.frame.children():
             if comp.tag == 'ZFOB':
                 screen = get_frame_image(directory, frame.idx)
                 encoded = encode_fake(screen, fobj.decompress(comp.data))
@@ -114,7 +114,7 @@ def split_sequences(
             pass
 
 
-def check_dirty(frame_range: Iterable[int], files: Set[str]) -> bool:
+def check_dirty(frame_range: Iterable[int], files: set[str]) -> bool:
     return any(f'FRME_{num:05d}.png' in files for num in frame_range)
 
 
@@ -159,8 +159,5 @@ if __name__ == '__main__':
         'NEW_VIDEO2.SAN',
         encode_san(root, os.path.join('out', os.path.basename(args.filename))),
     )
-    # assert encode_san(
-    #     root, os.path.join('out', os.path.basename(args.filename))
-    # ) == read_file(args.filename)
 
     print('ALL OK')

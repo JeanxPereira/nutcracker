@@ -1,8 +1,11 @@
-from typing import IO, Callable, Iterable, Iterator, Optional
+from collections.abc import Callable, Iterable, Iterator
+from typing import IO
 
 
 def read_message(
-    stream: IO[bytes], escape: Optional[bytes] = None, var_size: int = 2
+    stream: IO[bytes],
+    escape: bytes | None = None,
+    var_size: int = 2,
 ) -> Iterator[bytes]:
     while True:
         c = stream.read(1)
@@ -18,8 +21,7 @@ def read_message(
 
 
 class ScriptArg:
-    def to_bytes(self) -> bytes:
-        ...
+    def to_bytes(self) -> bytes: ...
 
 
 class CString(ScriptArg):
@@ -104,7 +106,7 @@ class Statement:
 
     def __repr__(self) -> str:
         return ' '.join(
-            [f'0x{self.opcode:02x}', self.name, '{', *(str(x) for x in self.args), '}']
+            [f'0x{self.opcode:02x}', self.name, '{', *(str(x) for x in self.args), '}'],
         )
 
     def to_bytes(self) -> bytes:

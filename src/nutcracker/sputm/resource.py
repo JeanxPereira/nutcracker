@@ -1,13 +1,13 @@
 import glob
 import os
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Optional, Sequence
 
-from nutcracker.utils.fileio import read_file
+from nutcracker.kernel2.fileio import ResourceFile
+from nutcracker.kernel2.element import Element
 
 from .index import read_directory_leg, read_directory_leg_v8
 from .preset import sputm
-from .types import Element
 
 version_by_ext_maxs = {
     ('.LA0', 176): (8, 0),
@@ -62,7 +62,7 @@ def get_disk(game: _GameMeta, num: int) -> str:
     return f'DISK{num:02d}.LEC' if num > 0 else '000.LFL'
 
 
-def load_resource(index_file: str, chiper_key: Optional[int] = None):
+def load_resource(index_file: str | os.PathLike[str], chiper_key: int | None = None) -> Game:
     print(index_file)
     basename, ext = os.path.splitext(os.path.basename(index_file))
     ext = ext.upper()
@@ -71,10 +71,9 @@ def load_resource(index_file: str, chiper_key: Optional[int] = None):
     if chiper_key is None:
         chiper_key = chiper_keys.get(ext, 0x00)
 
-    index = read_file(index_file, key=chiper_key)
-
-    schema = sputm.generate_schema(index)
-    index_root = list(sputm(schema=schema).map_chunks(index))
+    with ResourceFile.load(index_file, key=chiper_key) as index:
+        schema = sputm.generate_schema(index)
+        index_root = list(sputm(schema=schema).map_chunks(index))
 
     # Detect version from index
     maxs = sputm.find('MAXS', index_root)

@@ -7,5 +7,5 @@ app = typer.Typer()
 app.add_typer(smush.app, name='smush')
 app.add_typer(sputm.app, name='sputm')
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app()

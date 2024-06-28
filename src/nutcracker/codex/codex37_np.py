@@ -59,7 +59,7 @@ motion_vectors = (
         ( -5, -17), ( -8, -17), (-13, -17), (-17, -17), (-21, -17),
         (  0, -21), (  1, -21), (  2, -21), (  3, -21), (  5, -21),
         (  8, -21), ( 13, -21), ( 21, -21), ( -1, -21), ( -2, -21),
-        ( -3, -21), ( -5, -21), ( -8, -21), (-13, -21), (-17, -21)
+        ( -3, -21), ( -5, -21), ( -8, -21), (-13, -21), (-17, -21),
     ),
     (
         (  0,   0), ( -8, -29), (  8, -29), (-18, -25), ( 17, -25),
@@ -112,7 +112,7 @@ motion_vectors = (
         ( -4,  13), (  4,  13), (  0,  14), (-10,  15), ( 10,  15),
         ( -5,  17), (  5,  17), ( 25,  17), (-25,  18), (  0,  18),
         (-12,  19), ( 13,  19), ( -6,  22), (  6,  22), (  0,  23),
-        (-17,  25), ( 18,  25), ( -8,  29), (  8,  29), (  0,  31)
+        (-17,  25), ( 18,  25), ( -8,  29), (  8,  29), (  0,  31),
     ),
     (
         (  0,   0), ( -6, -22), (  6, -22), (-13, -19), ( 12, -19),
@@ -165,8 +165,8 @@ motion_vectors = (
         ( -8,  11), ( -2,  11), (  0,  11), (  2,  11), (  8,  11),
         ( 19,  12), (-19,  13), ( -4,  13), (  4,  13), (  0,  14),
         (-10,  15), ( 10,  15), ( -5,  17), (  5,  17), (  0,  18),
-        (-12,  19), ( 13,  19), ( -6,  22), (  6,  22), (  0,  23)
-    )
+        (-12,  19), ( 13,  19), ( -6,  22), (  6,  22), (  0,  23),
+    ),
 )
 # fmt: on
 
@@ -271,7 +271,8 @@ def decode37(src, width, height):
         decoded = bomp.decode_line(gfx_data, decoded_size)
         # print(decoded[width * height:])  # might need it to fill data between buffers
         out[:, :] = np.frombuffer(decoded[: width * height], dtype=np.uint8).reshape(
-            _height, _width
+            _height,
+            _width,
         )
     elif compression in (3, 4):
         proc37(
@@ -314,19 +315,20 @@ def process_blocks(out, stream, height, width, offsets, allow_blocks, allow_skip
     raveled = _bprev.ravel()
 
     skip = 0
-    for (yloc, xloc) in get_locs(width, height, 4):
-
+    for yloc, xloc in get_locs(width, height, 4):
         if skip:
             skip -= 1
             out[yloc : yloc + 4, xloc : xloc + 4] = _bprev[
-                yloc : yloc + 4, xloc : xloc + 4
+                yloc : yloc + 4,
+                xloc : xloc + 4,
             ]
             continue
         code = ord(stream.read(1))
 
         if code == 0xFF:
             out[yloc : yloc + 4, xloc : xloc + 4] = np.frombuffer(
-                stream.read(16), dtype=np.uint8
+                stream.read(16),
+                dtype=np.uint8,
             ).reshape((4, 4))
 
         elif allow_blocks and code == 0xFE:
@@ -340,7 +342,8 @@ def process_blocks(out, stream, height, width, offsets, allow_blocks, allow_skip
         elif allow_skip and code == 0:
             skip = ord(stream.read(1))
             out[yloc : yloc + 4, xloc : xloc + 4] = _bprev[
-                yloc : yloc + 4, xloc : xloc + 4
+                yloc : yloc + 4,
+                xloc : xloc + 4,
             ]
 
         else:
@@ -367,8 +370,7 @@ def proc1(bout, src, width, height, offsets):
     ln = -1
 
     with io.BytesIO(src) as stream:
-
-        for (yloc, xloc) in get_locs(width, height, 4):
+        for yloc, xloc in get_locs(width, height, 4):
             if ln < 0:
                 code = ord(stream.read(1))
                 filling = code & 1
@@ -402,7 +404,8 @@ def proc1(bout, src, width, height, offsets):
 
             if 0 <= bx < bx + 4 < width and 0 <= by < by + 4 < _height:
                 bout[yloc : yloc + 4, xloc : xloc + 4] = _bprev[
-                    by : by + 4, bx : bx + 4
+                    by : by + 4,
+                    bx : bx + 4,
                 ]
             else:
                 for k in range(min(height - yloc, 4)):
@@ -416,7 +419,6 @@ def proc1(bout, src, width, height, offsets):
 
 
 def fake_encode37(out):
-
     width = len(out[0])
     height = len(out)
     print(width, height)

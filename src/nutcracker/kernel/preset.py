@@ -7,14 +7,13 @@ _SettingT = TypeVar('_SettingT', bound='_DefaultOverride')
 
 
 @dataclass(frozen=True)
-class _DefaultOverride(object):
+class _DefaultOverride:
     def __call__(self: _SettingT, **kwargs: Any) -> _SettingT:
         return replace(self, **kwargs)
 
 
 @dataclass(frozen=True)
 class _ChunkPreset(settings._ChunkSetting, _DefaultOverride):
-
     # static pass through
     assert_tag = staticmethod(iterchunk.assert_tag)
     drop_offsets = staticmethod(iterchunk.drop_offsets)
@@ -31,7 +30,6 @@ class _ChunkPreset(settings._ChunkSetting, _DefaultOverride):
 
 @dataclass(frozen=True)
 class _ShellPreset(settings._IndexSetting, _ChunkPreset):
-
     # static pass through
     find = staticmethod(tree.find)
     findall = staticmethod(tree.findall)

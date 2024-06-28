@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
-from typing import Any, Callable, Dict, FrozenSet, Iterator, Optional, Set
+from typing import Any
 
 from .chunk import Chunk
 from .element import Element
@@ -24,7 +25,7 @@ class MissingSchemaEntry(Exception):
 
 
 @contextmanager
-def exception_ptag_context(ptag: Optional[str]) -> Iterator[None]:
+def exception_ptag_context(ptag: str | None) -> Iterator[None]:
     try:
         yield
     except Exception as exc:
@@ -33,7 +34,7 @@ def exception_ptag_context(ptag: Optional[str]) -> Iterator[None]:
         raise exc
 
 
-def check_schema(cfg: _IndexSetting, ptag: Optional[str], tag: str) -> None:
+def check_schema(cfg: _IndexSetting, ptag: str | None, tag: str) -> None:
     try:
         if ptag and tag not in cfg.schema[ptag]:
             raise MissingSchemaEntry(ptag, tag)
@@ -53,9 +54,9 @@ def create_element(offset: int, chunk: Chunk, **attrs: Any) -> Element:
 def map_chunks(
     cfg: _IndexSetting,
     data: bytes,
-    parent: Optional[Element] = None,
+    parent: Element | None = None,
     level: int = 0,
-    extra: Optional[Callable[[Optional[Element], Chunk, int], Dict[str, Any]]] = None,
+    extra: Callable[[Element | None, Chunk, int], dict[str, Any]] | None = None,
     offset: int = 0,
 ) -> Iterator[Element]:
     ptag = parent.tag if parent else None
@@ -84,11 +85,11 @@ def map_chunks(
             )
 
 
-def generate_schema(cfg: _IndexSetting, data: bytes) -> Dict[str, Set[str]]:
-    EMPTY: FrozenSet[str] = frozenset()
-    DUMMY: FrozenSet[str] = frozenset(('__DUMMY__',))
+def generate_schema(cfg: _IndexSetting, data: bytes) -> dict[str, set[str]]:
+    EMPTY: frozenset[str] = frozenset()
+    DUMMY: frozenset[str] = frozenset(('__DUMMY__',))
 
-    schema: Dict[str, FrozenSet[str]] = {}
+    schema: dict[str, frozenset[str]] = {}
 
     # TODO: check if partial iterations are possible
     while True:

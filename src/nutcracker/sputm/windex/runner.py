@@ -2,18 +2,16 @@ import functools
 import os
 from enum import Enum
 from pathlib import Path
-from typing import Optional
 
 import typer
 
+from .. import windex_v5, windex_v6
 from ..preset import sputm
-from ..tree import open_game_resource, narrow_schema
 from ..schema import SCHEMA
 from ..script.bytecode import script_map
 from ..strings import RAW_ENCODING
-
+from ..tree import narrow_schema, open_game_resource
 from .scu import dump_script_file
-from .. import windex_v5, windex_v6
 
 app = typer.Typer()
 
@@ -35,27 +33,45 @@ SUPPORTED_VERSION = {
     '5': (5, 0),
 }
 
-Version = Enum('Version', dict(zip(SUPPORTED_VERSION.keys(), SUPPORTED_VERSION.keys())))
+Version = Enum(  # type: ignore[misc]
+    'Version',
+    dict(zip(SUPPORTED_VERSION.keys(), SUPPORTED_VERSION.keys(), strict=True)),
+)
+
 
 @app.command('decompile')
 def decompile(
     filename: Path = typer.Argument(..., help='Game resource index file'),
-    gver: Optional[Version] = typer.Option(None, '--game', '-g', help='Force game version'),
+    gver: Version = typer.Option(
+        None,
+        '--game',
+        '-g',
+        help='Force game version',
+    ),
+    *,
     verbose: bool = typer.Option(False, '--verbose', help='Dump each opcode for debug'),
-    chiper_key: Optional[str] = typer.Option(None, '--chiper-key', help='XOR key for decrypting game resources'),
-    skip_transform: bool = typer.Option(False, '--skip-transform', help='Disable structure simplification'),
+    chiper_key: str = typer.Option(
+        None,
+        '--chiper-key',
+        help='XOR key for decrypting game resources',
+    ),
+    skip_transform: bool = typer.Option(
+        False,
+        '--skip-transform',
+        help='Disable structure simplification',
+    ),
 ) -> None:
     gameres = open_game_resource(
         filename,
-        SUPPORTED_VERSION.get(gver and gver.name),
-        chiper_key and int(chiper_key, 16),
+        SUPPORTED_VERSION.get(gver.name) if gver else None,
+        int(chiper_key, 16) if chiper_key else None,
     )
     basename = gameres.basename
 
     root = gameres.read_resources(
-        max_depth=5,
         schema=narrow_schema(
-            SCHEMA, {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', *script_map}
+            SCHEMA,
+            {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', *script_map},
         ),
     )
 

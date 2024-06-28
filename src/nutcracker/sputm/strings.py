@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 
 import io
+from collections.abc import Callable, Iterable, Iterator, Mapping
 from string import printable
-from typing import Callable, Iterable, Iterator, Mapping, Optional, Tuple, TypedDict
+from typing import TypedDict
 
+from nutcracker.kernel2.element import Element
 from nutcracker.sputm.script.bytecode import (
     descumm,
     get_strings,
@@ -31,9 +33,7 @@ from nutcracker.sputm.script.opcodes import (
 )
 from nutcracker.sputm.script.opcodes_v5 import OPCODES_v5
 
-from .preset import sputm
 from .resource import Game
-from .types import Element
 
 
 class EncodingSetting(TypedDict):
@@ -47,7 +47,7 @@ RAW_ENCODING = EncodingSetting(encoding='ascii', errors='surrogateescape')
 def get_all_scripts(
     root: Iterable[Element],
     opcodes: OpTable,
-    script_map: Mapping[str, Callable[[bytes], Tuple[bytes, bytes]]],
+    script_map: Mapping[str, Callable[[bytes], tuple[bytes, bytes]]],
 ) -> Iterator[bytes]:
     for elem in root:
         if elem.tag in {'OBNA', 'TEXT'}:
@@ -63,7 +63,7 @@ def get_all_scripts(
                 for msg in get_strings(bytecode):
                     yield msg.msg
             else:
-                yield from get_all_scripts(elem.children, opcodes, script_map)
+                yield from get_all_scripts(elem.children(), opcodes, script_map)
 
 
 def parse_verb_meta(meta):
@@ -72,9 +72,7 @@ def parse_verb_meta(meta):
             key = stream.read(1)
             if key in {b'\0'}:  # , b'\xFF'}:
                 break
-            entry = int.from_bytes(
-                stream.read(2), byteorder='little', signed=False
-            )
+            entry = int.from_bytes(stream.read(2), byteorder='little', signed=False)
             yield key, entry - len(meta)
         assert stream.read() == b''
 
@@ -92,14 +90,14 @@ def update_element_strings(
     root: Iterable[Element],
     strings: Iterator[bytes],
     opcodes: OpTable,
-    script_map: Mapping[str, Callable[[bytes], Tuple[bytes, bytes]]],
+    script_map: Mapping[str, Callable[[bytes], tuple[bytes, bytes]]],
 ) -> Iterator[Element]:
     offset = 0
     strings = iter(strings)
     for elem in root:
         elem.attribs['offset'] = offset
         if elem.tag in {'OBNA', 'TEXT'} and elem.data != b'\x00':
-            elem.data = next(strings) + b'\x00'
+            elem.update_raw(next(strings) + b'\x00')
         elif elem.tag in {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', 'TLKE', *script_map}:
             if elem.tag in script_map:
                 serial, script_data = script_map[elem.tag](elem.data)
@@ -112,14 +110,16 @@ def update_element_strings(
                     entries = [(idx, bc[off - 8].offset + 8) for idx, off in pref]
                     serial = compose_verb_meta(entries)
                 attribs = elem.attribs
-                elem.data = serial + to_bytes(updated)
+                elem.update_raw(serial + to_bytes(updated))
                 elem.attribs = attribs
             else:
-                elem.children = list(
-                    update_element_strings(elem, strings, opcodes, script_map)
-                )
-                elem.data = sputm.write_chunks(
-                    sputm.mktag(e.tag, e.data) for e in elem.children
+                elem.update_children(
+                    update_element_strings(
+                        elem.children(),
+                        strings,
+                        opcodes,
+                        script_map,
+                    )
                 )
         offset += len(elem.data) + 8
         elem.attribs['size'] = len(elem.data)
@@ -127,8 +127,10 @@ def update_element_strings(
 
 
 def escape_message(
-    msg: bytes, escape: Optional[bytes] = None, var_size: int = 2
-) -> bytes:
+    msg: bytes,
+    escape: bytes | None = None,
+    var_size: int = 2,
+) -> Iterator[bytes]:
     with io.BytesIO(msg) as stream:
         while True:
             c = stream.read(1)
@@ -141,7 +143,9 @@ def escape_message(
                 if ord(t) not in {1, 2, 3, 8}:
                     c += stream.read(var_size)
                 c = b''.join(f'\\x{v:02X}'.encode() for v in c)
-            elif c not in (printable.encode() + bytes(range(ord('\xE0'), ord('\xFA') + 1))):
+            elif c not in (
+                printable.encode() + bytes(range(ord('\xe0'), ord('\xfa') + 1))
+            ):
                 c = b''.join(f'\\x{v:02X}'.encode() for v in c)
             elif c == b'\\':
                 c = b'\\\\'
@@ -163,11 +167,7 @@ def unescape_message(msg: bytes) -> bytes:
 
 def print_to_msg(line: str, encoding: EncodingSetting = RAW_ENCODING) -> bytes:
     return (
-        unescape_message(
-            line
-            .replace('\r', '')
-            .replace('\n', '').encode(**encoding)
-        )
+        unescape_message(line.replace('\r', '').replace('\n', '').encode(**encoding))
         .replace(b'\\x0D', b'\r')
         .replace(b'\\x09', b'\t')
         .replace(b'\\x80', b'\x80')
@@ -176,7 +176,11 @@ def print_to_msg(line: str, encoding: EncodingSetting = RAW_ENCODING) -> bytes:
     )
 
 
-def msg_to_print(msg: bytes, encoding: EncodingSetting = RAW_ENCODING, var_size=2) -> str:
+def msg_to_print(
+    msg: bytes,
+    encoding: EncodingSetting = RAW_ENCODING,
+    var_size: int = 2,
+) -> str:
     assert b'\\x80' not in msg
     assert b'\\xd9' not in msg
     assert b'\\x0D' not in msg
@@ -184,8 +188,7 @@ def msg_to_print(msg: bytes, encoding: EncodingSetting = RAW_ENCODING, var_size=
     escaped = b''.join(escape_message(msg, escape=b'\xff', var_size=var_size))
     assert b'\n' not in escaped
     line = (
-        escaped
-        .replace(b'\r', b'\\x0D')
+        escaped.replace(b'\r', b'\\x0D')
         .replace(b'\t', b'\\x09')
         .replace(b'\x80', b'\\x80')
         .replace(b'\xd9', b'\\xd9')
@@ -226,7 +229,7 @@ def get_optable(game: Game) -> OpTable:
     raise NotImplementedError('SCUMM < 5 is not implemented')
 
 
-def get_script_map(game: Game) -> Mapping[str, Callable[[bytes], Tuple[bytes, bytes]]]:
+def get_script_map(game: Game) -> Mapping[str, Callable[[bytes], tuple[bytes, bytes]]]:
     script_map = {
         'SCRP': global_script,
         'LSCR': local_script,

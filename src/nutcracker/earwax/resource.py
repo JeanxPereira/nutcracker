@@ -1,24 +1,37 @@
 import io
 import os
 import struct
+from collections.abc import Iterator
 from pprint import pprint
-from typing import Iterator, Tuple
+from typing import Any
 
 from nutcracker.chiper import xor
 from nutcracker.kernel.buffer import Splicer, UnexpectedBufferSize
-from nutcracker.kernel.chunk import Chunk
-from nutcracker.kernel.index import create_element
+from nutcracker.kernel2.chunk import ArrayBuffer, Chunk
+from nutcracker.kernel2.element import Element
 from nutcracker.sputm.index import compare_pid_off, read_uint8le
 from nutcracker.sputm.tree import save_tree
-from nutcracker.utils.funcutils import flatten, grouper
 from nutcracker.utils.fileio import read_file
+from nutcracker.utils.funcutils import flatten
 
 from .preset import earwax
 
 UINT16LE = struct.Struct('<H')
 
 
-def read_room_names(data: bytes) -> Iterator[Tuple[int, str]]:
+def create_element(offset: int, chunk: Chunk, **attrs: Any) -> Element:
+    return Element(
+        earwax,
+        chunk,
+        attribs={
+            'offset': offset,
+            'size': len(chunk.data),
+            **attrs,
+        },
+    )
+
+
+def read_room_names(data: bytes) -> Iterator[tuple[int, str]]:
     with io.BytesIO(data) as stream:
         while True:
             (num,) = stream.read(1)
@@ -28,7 +41,7 @@ def read_room_names(data: bytes) -> Iterator[Tuple[int, str]]:
             yield num, name
 
 
-def read_dir(data: bytes) -> Iterator[Tuple[int, int]]:
+def read_dir(data: bytes) -> Iterator[tuple[int, int]]:
     with io.BytesIO(data) as stream:
         num = int.from_bytes(stream.read(2), byteorder='little', signed=False)
         for _ in range(num):
@@ -37,7 +50,7 @@ def read_dir(data: bytes) -> Iterator[Tuple[int, int]]:
             yield room_num, offset
 
 
-def read_offs(data: bytes) -> Iterator[Tuple[int, int]]:
+def read_offs(data: bytes) -> Iterator[tuple[int, int]]:
     with io.BytesIO(data) as stream:
         (num,) = stream.read(1)
         for _ in range(num):
@@ -45,9 +58,11 @@ def read_offs(data: bytes) -> Iterator[Tuple[int, int]]:
             offset = int.from_bytes(stream.read(4), byteorder='little', signed=False)
             yield room_num, offset
 
-def read_inner_uint16le(pid, data, off):
+
+def read_inner_uint16le(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[0:2], byteorder='little', signed=False)
     return res
+
 
 def read_index(root):
     rnam = {}
@@ -102,9 +117,7 @@ def open_game_resource(filename: str, chiper_key=0x00):
             continue
 
         def update_element_path(parent, chunk, offset):
-
             if chunk.tag == 'FO':
-
                 offs = dict(read_offs(chunk.data))
                 droo = {k: (disk_id, v) for k, v in offs.items()}
                 idgens['LF'] = compare_pid_off(droo, 6)
@@ -114,7 +127,9 @@ def open_game_resource(filename: str, chiper_key=0x00):
                 gid = disk_id
             else:
                 gid = get_gid and get_gid(
-                    parent and parent.attribs['gid'], chunk.data, offset
+                    parent and parent.attribs['gid'],
+                    chunk.data,
+                    offset,
                 )
                 if get_gid and not gid:
                     print('WARNING: MISSING GID', chunk, offset, parent)
@@ -133,7 +148,6 @@ def open_game_resource(filename: str, chiper_key=0x00):
             res = {'path': path, 'gid': gid}
             return res
 
-
         def path_only(parent, chunk, offset):
             idgens = {
                 'OC': read_inner_uint16le,
@@ -145,7 +159,9 @@ def open_game_resource(filename: str, chiper_key=0x00):
                 gid = disk_id
             else:
                 gid = get_gid and get_gid(
-                    parent and parent.attribs['gid'], chunk.data, offset
+                    parent and parent.attribs['gid'],
+                    chunk.data,
+                    offset,
                 )
 
             base = chunk.tag + (
@@ -162,17 +178,14 @@ def open_game_resource(filename: str, chiper_key=0x00):
             res = {'path': path, 'gid': gid}
             return res
 
-
         disk_file = os.path.join(basedir, disk_pattetn.format(disk=disk_id))
         res = read_file(disk_file, key=0x69)
         schema = earwax.generate_schema(res)
-        root = list(
-            earwax(schema=schema).map_chunks(res, extra=update_element_path)
-        )
+        root = list(earwax(schema=schema, extra=update_element_path).map_chunks(res))
         # for t in root:
         #     earwax.render(t)
 
-        for t in earwax.find('LE', root):
+        for t in earwax.find('LE', root).children():
             # print(disk_file, t)
             if t.tag != 'LF':
                 assert t.tag == 'FO', t
@@ -181,7 +194,23 @@ def open_game_resource(filename: str, chiper_key=0x00):
             assert t.attribs['gid'] == room_id
             schema = {
                 'LF': {'RO', 'SC', 'SO', 'CO'},
-                'RO': {'SP', 'HD', 'EX', 'CC', 'OC', 'OI', 'NL', 'BM', 'SL', 'LS', 'BX', 'LC', 'PA', 'SA', 'EN'},
+                'RO': {
+                    'SP',
+                    'HD',
+                    'EX',
+                    'CC',
+                    'OC',
+                    'OI',
+                    'NL',
+                    'BM',
+                    'SL',
+                    'LS',
+                    'BX',
+                    'LC',
+                    'PA',
+                    'SA',
+                    'EN',
+                },
                 'HD': set(),
                 'CC': set(),
                 'SP': set(),
@@ -206,31 +235,46 @@ def open_game_resource(filename: str, chiper_key=0x00):
             # print('ROOM', room_id)
             c = 2
 
-            room_chunk = next(earwax(schema=schema, max_depth=0).map_chunks(t.data, offset=c, parent=t, extra=path_only), None)
+            room_chunk = next(
+                earwax(schema=schema, extra=path_only).map_chunks(
+                    t.data,
+                    offset=c,
+                    parent=t,
+                ),
+                None,
+            )
             assert room_chunk.tag == 'RO', room_chunk
-            t.children.append(room_chunk)
+            t.add_child(room_chunk)
             c += len(bytes(room_chunk.chunk))
             # print('ROOOM')
             # earwax.render(room_chunk)
             # print('END ROOOM')
-            r = earwax(schema=dict(schema, RO=set()), max_depth=0).map_chunks(t.data, offset=c, parent=t, extra=update_element_path)
+            r = earwax(schema=dict(schema, RO=set()), extra=update_element_path).map_chunks(
+                t.data,
+                offset=c,
+                parent=t,
+            )
+
             try:
                 for a in r:
                     # earwax.render(a)
-                    assert a.tag == '_' or t.data[c+4:c+6] == a.tag.encode(), (t.data[c+4:c+6], a.tag.encode())
+                    assert a.tag == '_' or t.data[c + 4 : c + 6] == a.tag.encode(), (
+                        t.data[c + 4 : c + 6],
+                        a.tag.encode(),
+                    )
                     c += len(bytes(a.chunk))
-                    t.children.append(a)
+                    t.add_child(a)
                     # print(a)
             except UnexpectedBufferSize as exc:
                 print(f'warning: {exc}')
             rawd = t.data[c:]
             if rawd != b'':
-                t.children.append(
+                t.add_child(
                     create_element(
                         c,
                         Chunk('__', rawd, Splicer(0, len(rawd))),
-                        path=os.path.join(t.attribs['path'], 'REST')
-                    )
+                        path=os.path.join(t.attribs['path'], 'REST'),
+                    ),
                 )
                 # print(t.children)
                 # print(len(rawd))
@@ -238,8 +282,10 @@ def open_game_resource(filename: str, chiper_key=0x00):
                 #     print('RAWD', bytes(x for x in chnk if x is not None))
         yield from root
 
+
 def dump_resources(
-    root, basename,
+    root,
+    basename,
 ):
     os.makedirs(basename, exist_ok=True)
     with open(os.path.join(basename, 'rpdump.xml'), 'w') as f:
@@ -261,5 +307,5 @@ if __name__ == '__main__':
     for filename in files:
         root = list(open_game_resource(filename, int(args.chiper_key, 16)))
         # for t in root:
-            # earwax.render(t)
+        # earwax.render(t)
         dump_resources(root, os.path.basename(os.path.dirname(filename)))

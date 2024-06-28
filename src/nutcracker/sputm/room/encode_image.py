@@ -6,21 +6,31 @@ import numpy as np
 from PIL import Image
 
 from nutcracker.codex.codex import decode1, encode1
-from nutcracker.codex.smap import decode_smap, encode_smap, extract_smap_codes, encode_he
+from nutcracker.codex.smap import (
+    decode_smap,
+    encode_he,
+    encode_smap,
+    extract_smap_codes,
+)
+from nutcracker.kernel2.element import Element
 from nutcracker.utils.fileio import write_file
 
 from ..preset import sputm
 
 
-def encode_block_v8(filename, blocktype, version=8, ref=None):
+def encode_block_v8(
+    filename: str,
+    blocktype: str,
+    version: int = 8,
+    ref: Element | None = None,
+) -> bytes:
     im = Image.open(filename)
     npim = np.asarray(im, dtype=np.uint8)
 
     if blocktype == 'SMAP':
         ref_data = ref.data if ref else None
         if version == 8 and ref_data:
-
-            chunk = sputm.mktag(blocktype, ref_data)
+            chunk = bytes(sputm.mktag(blocktype, ref_data))
             s = sputm.generate_schema(chunk)
             image = next(sputm(schema=s).map_chunks(chunk))
 
@@ -38,12 +48,13 @@ def encode_block_v8(filename, blocktype, version=8, ref=None):
         num_strips = im.width // 8
         offs = smap[: num_strips * 4]
         data = smap[4 * num_strips :]
-        smap_v8 = sputm.mktag(
-            'BSTR', sputm.mktag('WRAP', sputm.mktag('OFFS', offs) + data)
-        )
+        smap_v8 = bytes(sputm.mktag(
+            'BSTR',
+            bytes(sputm.mktag('WRAP', bytes(sputm.mktag('OFFS', offs)) + data)),
+        ))
 
         # verify
-        chunk = sputm.mktag(blocktype, smap_v8)
+        chunk = bytes(sputm.mktag(blocktype, smap_v8))
         s = sputm.generate_schema(chunk)
         image = next(sputm(schema=s).map_chunks(chunk))
 
@@ -57,7 +68,6 @@ def encode_block_v8(filename, blocktype, version=8, ref=None):
         assert np.array_equal(npim, decode1(*npim.shape[::-1], bomp))
         # v8
         return struct.pack('<2I', *npim.shape[::-1]) + bomp
-        return None
 
     if blocktype == 'BMAP':
         assert ref
@@ -72,6 +82,8 @@ def encode_block_v8(filename, blocktype, version=8, ref=None):
         elif code == 150:
             assert len(set(npim.ravel())) == 1
             return bytes([code, npim.ravel()[0]])
+
+    raise ValueError(blocktype)
 
 
 if __name__ == '__main__':

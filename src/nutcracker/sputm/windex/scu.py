@@ -1,6 +1,7 @@
-from typing import IO, Callable, Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
+from typing import IO
 
-from nutcracker.kernel.element import Element
+from nutcracker.kernel2.element import Element
 from nutcracker.sputm.script.bytecode import script_map
 
 
@@ -10,7 +11,7 @@ def get_global_scripts(root: Iterable[Element]) -> Iterator[Element]:
             if elem.tag in {*script_map}:
                 yield elem
             else:
-                yield from get_global_scripts(elem.children)
+                yield from get_global_scripts(elem.children())
 
 
 def get_room_scripts(root: Iterable[Element]) -> Iterator[Element]:
@@ -23,23 +24,27 @@ def get_room_scripts(root: Iterable[Element]) -> Iterator[Element]:
             elif elem.tag in {*script_map, 'OBCD'}:
                 yield elem
             else:
-                yield from get_room_scripts(elem.children)
+                yield from get_room_scripts(elem.children())
 
 
 def dump_script_file(
     room_no: str,
-    room: Iterable[Element],
+    room: Element,
     decompile: Callable[[Element], Iterator[str]],
     outfile: IO[str],
-):
-    for elem in get_global_scripts(room):
+) -> None:
+    children = list(room.children())
+    for elem in get_global_scripts(children):
         for line in decompile(elem):
             print(line, file=outfile)
         print('', file=outfile)  # end with new line
     print(f'room {room_no}', '{', file=outfile)
-    for elem in get_room_scripts(room):
+    for elem in get_room_scripts(children):
         print('', file=outfile)  # end with new line
         for line in decompile(elem):
-            print(line if line.endswith(']:') or not line else f'\t{line}', file=outfile)
+            print(
+                line if line.endswith(']:') or not line else f'\t{line}',
+                file=outfile,
+            )
     print('}', file=outfile)
     print('', file=outfile)  # end with new line

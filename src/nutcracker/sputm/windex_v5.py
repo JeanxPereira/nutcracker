@@ -1,25 +1,30 @@
 import io
-import os
+import itertools
 import json
 import operator
-import itertools
-from collections import defaultdict, deque
+import os
+from collections import OrderedDict, defaultdict, deque
+from collections.abc import Iterable
 from dataclasses import dataclass
 from string import printable
-from typing import Iterable, Optional, OrderedDict
 
-from nutcracker.kernel.element import Element
-
+from nutcracker.kernel2.element import Element
 from nutcracker.sputm.preset import sputm
-from nutcracker.sputm.script.shared import BytecodeError, ScriptError, parse_verb_meta, print_asts, realize_refs
+from nutcracker.sputm.schema import SCHEMA
+from nutcracker.sputm.script.shared import (
+    BytecodeError,
+    ScriptError,
+    parse_verb_meta,
+    print_asts,
+    realize_refs,
+)
 from nutcracker.sputm.strings import RAW_ENCODING, EncodingSetting
 from nutcracker.sputm.tree import narrow_schema
-from nutcracker.sputm.schema import SCHEMA
 
 from .script.bytecode import BytecodeParseError, descumm_iter, get_argtype, script_map
 from .script.opcodes import ByteValue, RefOffset
-from .script.opcodes_v5 import OPCODES_v5, Variable, value as ovalue
-
+from .script.opcodes_v5 import OPCODES_v5, Variable
+from .script.opcodes_v5 import value as ovalue
 
 USE_SEMANTIC_CONTEXT = False
 
@@ -45,13 +50,17 @@ def build_params(mapping, args):
 def builder(mapping, sep=' '):
     def inner(args):
         return sep.join(build_params(mapping, args))
+
     return inner
 
 
 def build_varargs(args, sep=' '):
-    return builder({
-        'ARG': '{0}',
-    }, sep=sep)(args)
+    return builder(
+        {
+            'ARG': '{0}',
+        },
+        sep=sep,
+    )(args)
 
 
 def value(arg, sem=None):
@@ -69,7 +78,7 @@ def value(arg, sem=None):
 class PrintArg:
     def __init__(self, arg) -> None:
         self.arg = arg
-    
+
     def __format__(self, format_spec) -> str:
         if format_spec == 'msg':
             return msg_val(self.arg)
@@ -89,7 +98,7 @@ def print_locals(indent):
         yield ''  # new line
 
 
-def get_element_by_path(path: str, root: Iterable[Element]) -> Optional[Element]:
+def get_element_by_path(path: str, root: Iterable[Element]) -> Element | None:
     for elem in root:
         if elem.attribs['path'] == path:
             return elem
@@ -99,7 +108,9 @@ def get_element_by_path(path: str, root: Iterable[Element]) -> Optional[Element]
 
 
 def escape_message(
-    msg: bytes, escape: Optional[bytes] = None, var_size: int = 2
+    msg: bytes,
+    escape: bytes | None = None,
+    var_size: int = 2,
 ) -> bytes:
     controls = {0x04: 'n', 0x05: 'v', 0x06: 'o', 0x07: 's'}
     with io.BytesIO(msg) as stream:
@@ -113,7 +124,9 @@ def escape_message(
                 if ord(t) in controls:
                     control = controls[ord(t)]
                     num = int.from_bytes(
-                        stream.read(var_size), byteorder='little', signed=False
+                        stream.read(var_size),
+                        byteorder='little',
+                        signed=False,
                     )
                     c = f'%{control}{num}%'.encode()
                 else:
@@ -121,7 +134,9 @@ def escape_message(
                     if ord(t) not in {1, 2, 3, 8}:
                         c += stream.read(var_size)
                     c = b''.join(f'\\x{v:02X}'.encode() for v in c)
-            elif c not in (printable.encode() + bytes(range(ord('\xE0'), ord('\xFA') + 1))):
+            elif c not in (
+                printable.encode() + bytes(range(ord('\xe0'), ord('\xfa') + 1))
+            ):
                 c = b''.join(f'\\x{v:02X}'.encode() for v in c)
             elif c == b'\\':
                 c = b'\\\\'
@@ -142,7 +157,7 @@ def msg_val(arg):
 
 
 def adr(arg):
-    return f"&[{arg.abs + 8:08d}]"
+    return f'&[{arg.abs + 8:08d}]'
 
 
 def colored(arg):
@@ -189,6 +204,7 @@ def rpn_to_infix(exp):
 
 ops = {}
 
+
 def regop(mask):
     def inner(op):
         ops[mask] = op
@@ -217,7 +233,7 @@ string_params = builder(
         'SO_OVERHEAD': 'overhead',
         'SO_SAY_VOICE': 'voice {0} delay {1}',
         'SO_TEXTSTRING': '{0:msg}',
-    }
+    },
 )
 
 
@@ -249,6 +265,7 @@ class ConditionalJump:
 
     def __str__(self) -> str:
         return f'if !({self.expr}) jump {adr(self.ref)}'
+
 
 @dataclass
 class UnconditionalJump:
@@ -331,6 +348,7 @@ def o5_getActorX_wd(op):
 def o5_getActorFacing_wd(op):
     return fstat('{0} = actor-facing {1:object}', *op.args)
 
+
 @regop('o5_isGreaterEqual')
 def o5_isGreaterEqual_wd(op):
     *args, offset = op.args
@@ -361,10 +379,12 @@ def o5_loadRoomWithEgo_wd(op):
 @regop('o5_drawObject')
 def o5_drawObject_wd(op):
     obj, *args = op.args
-    params = builder({
-        'AT': 'at {0},{1}',
-        'STATE': 'image {0:state}',
-    })
+    params = builder(
+        {
+            'AT': 'at {0},{1}',
+            'STATE': 'image {0:state}',
+        },
+    )
     return fstat('draw-object {0:object} {params}', obj, params=params(args))
 
 
@@ -403,25 +423,27 @@ def o5_setState_wd(op):
 
 @regop('o5_stringOps')
 def o5_stringOps_wd(op):
-    return builder({
-        'ASSIGN-STRING': '*{0} = {1:msg}',
-        'ASSIGN-STRING-VAR': (
-            # 0x27 o5_setState { BYTE hex=0x02 dec=2 BYTE hex=0x2f dec=47 BYTE hex=0x30 dec=48 }
-            # *#47 = *#48
-            '*{0} = *{1}'
-        ),
-        'ASSIGN-INDEX': (
-            # 0x27 o5_setState { BYTE hex=0x03 dec=3 BYTE hex=0x15 dec=21 BYTE hex=0x00 dec=0 VAR_9991 }
-            # *#21[#0] = #7
-            '*{0}[{1}] = {2}'
-        ),
-        'ASSIGN-VAR': (
-            # 0x27 o5_setState { BYTE hex=0x44 dec=68 L.2 BYTE hex=0x1e dec=30 L.0 }
-            # L.{0} = *#30[L.{0}]
-            '{0} = *{1}[{2}]'
-        ),
-        'STRING-INDEX': '*{0}[{1}]',
-    })(op.args)
+    return builder(
+        {
+            'ASSIGN-STRING': '*{0} = {1:msg}',
+            'ASSIGN-STRING-VAR': (
+                # 0x27 o5_setState { BYTE hex=0x02 dec=2 BYTE hex=0x2f dec=47 BYTE hex=0x30 dec=48 }
+                # *#47 = *#48
+                '*{0} = *{1}'
+            ),
+            'ASSIGN-INDEX': (
+                # 0x27 o5_setState { BYTE hex=0x03 dec=3 BYTE hex=0x15 dec=21 BYTE hex=0x00 dec=0 VAR_9991 }
+                # *#21[#0] = #7
+                '*{0}[{1}] = {2}'
+            ),
+            'ASSIGN-VAR': (
+                # 0x27 o5_setState { BYTE hex=0x44 dec=68 L.2 BYTE hex=0x1e dec=30 L.0 }
+                # L.{0} = *#30[L.{0}]
+                '{0} = *{1}[{2}]'
+            ),
+            'STRING-INDEX': '*{0}[{1}]',
+        },
+    )(op.args)
 
 
 @regop('o5_getStringWidth')
@@ -489,7 +511,7 @@ def o5_start_script_wd(op):
         'start-script {background}{recursive}{0:script} ({1:cvargs})',
         *op.args,
         background='bak ' if op.opcode & 0x20 else '',
-        recursive='rec ' if op.opcode & 0x40 else ''
+        recursive='rec ' if op.opcode & 0x40 else '',
     )
 
 
@@ -510,57 +532,63 @@ def o5_debug_wd(op):
 
 @regop('o5_saveRestoreVerbs')
 def o5_saveRestoreVerbs_wd(op):
-    return builder({
-        'SO_SAVE_VERBS': 'save-verbs {0} to {1} set {2}',
-        'SO_RESTORE_VERBS': 'restore-verbs {0} to {1} set {2}',
-    })(op.args)
+    return builder(
+        {
+            'SO_SAVE_VERBS': 'save-verbs {0} to {1} set {2}',
+            'SO_RESTORE_VERBS': 'restore-verbs {0} to {1} set {2}',
+        },
+    )(op.args)
 
 
 @regop('o5_resourceRoutines')
 def o5_resourceRoutines_wd(op):
-    return builder({
-        'SO_LOAD_SCRIPT': 'load-script {0:script}',
-        'SO_LOAD_SOUND': 'load-sound {0:sound}',
-        'SO_LOAD_COSTUME': 'load-costume {0:costume}',
-        'SO_LOAD_ROOM': 'load-room {0:room}',
-        'SO_NUKE_SCRIPT': 'nuke-script {0:script}',
-        'SO_NUKE_SOUND': 'nuke-sound {0:sound}',
-        'SO_NUKE_COSTUME': 'nuke-costume {0:costume}',
-        'SO_NUKE_ROOM': 'nuke-room {0:room}',
-        'SO_LOCK_SCRIPT': 'lock-script {0:script}',
-        'SO_LOCK_SOUND': 'lock-sound {0:sound}',
-        'SO_LOCK_COSTUME': 'lock-costume {0:costume}',
-        'SO_LOCK_ROOM': 'lock-room {0:room}',
-        'SO_UNLOCK_SCRIPT': 'unlock-script {0:script}',
-        'SO_UNLOCK_SOUND': 'unlock-sound {0:sound}',
-        'SO_UNLOCK_COSTUME': 'unlock-costume {0:costume}',
-        'SO_UNLOCK_ROOM': 'unlock-room {0:room}',
-        'SO_CLEAR_HEAP': 'clear-heap',
-        'SO_LOAD_CHARSET': 'load-charset {0:charset}',
-        'SO_LOAD_OBJECT': 'load-object {1:object} in-room {0:room}',
-    })(op.args)
+    return builder(
+        {
+            'SO_LOAD_SCRIPT': 'load-script {0:script}',
+            'SO_LOAD_SOUND': 'load-sound {0:sound}',
+            'SO_LOAD_COSTUME': 'load-costume {0:costume}',
+            'SO_LOAD_ROOM': 'load-room {0:room}',
+            'SO_NUKE_SCRIPT': 'nuke-script {0:script}',
+            'SO_NUKE_SOUND': 'nuke-sound {0:sound}',
+            'SO_NUKE_COSTUME': 'nuke-costume {0:costume}',
+            'SO_NUKE_ROOM': 'nuke-room {0:room}',
+            'SO_LOCK_SCRIPT': 'lock-script {0:script}',
+            'SO_LOCK_SOUND': 'lock-sound {0:sound}',
+            'SO_LOCK_COSTUME': 'lock-costume {0:costume}',
+            'SO_LOCK_ROOM': 'lock-room {0:room}',
+            'SO_UNLOCK_SCRIPT': 'unlock-script {0:script}',
+            'SO_UNLOCK_SOUND': 'unlock-sound {0:sound}',
+            'SO_UNLOCK_COSTUME': 'unlock-costume {0:costume}',
+            'SO_UNLOCK_ROOM': 'unlock-room {0:room}',
+            'SO_CLEAR_HEAP': 'clear-heap',
+            'SO_LOAD_CHARSET': 'load-charset {0:charset}',
+            'SO_LOAD_OBJECT': 'load-object {1:object} in-room {0:room}',
+        },
+    )(op.args)
 
 
 @regop('o5_cursorCommand')
 def o5_cursorCommand_wd(op):
-    return builder({
-        'SO_CURSOR_ON': 'cursor on',
-        'SO_CURSOR_OFF': 'cursor off',
-        'SO_USERPUT_ON': 'userput on',
-        'SO_USERPUT_OFF': 'userput off',
-        'SO_CURSOR_SOFT_ON': 'cursor soft-on',
-        'SO_CURSOR_SOFT_OFF': 'cursor soft-off',
-        'SO_USERPUT_SOFT_ON': 'userput soft-on',
-        'SO_USERPUT_SOFT_OFF': 'userput soft-off',
-        'SO_CURSOR_IMAGE': 'cursor {0:cursor} image {1:state}',
-        'SO_CURSOR_HOTSPOT': 'cursor {0:cursor} hotspot {1},{2}',
-        'SO_CURSOR_SET': 'cursor {0:cursor}',
-        'SO_CHARSET_SET': 'charset {0:charset}',
-        'CHARSET-COLOR': (
-            # windex just says '???'
-            'charset color {0:csvargs}'
-        ),
-    })(op.args)
+    return builder(
+        {
+            'SO_CURSOR_ON': 'cursor on',
+            'SO_CURSOR_OFF': 'cursor off',
+            'SO_USERPUT_ON': 'userput on',
+            'SO_USERPUT_OFF': 'userput off',
+            'SO_CURSOR_SOFT_ON': 'cursor soft-on',
+            'SO_CURSOR_SOFT_OFF': 'cursor soft-off',
+            'SO_USERPUT_SOFT_ON': 'userput soft-on',
+            'SO_USERPUT_SOFT_OFF': 'userput soft-off',
+            'SO_CURSOR_IMAGE': 'cursor {0:cursor} image {1:state}',
+            'SO_CURSOR_HOTSPOT': 'cursor {0:cursor} hotspot {1},{2}',
+            'SO_CURSOR_SET': 'cursor {0:cursor}',
+            'SO_CHARSET_SET': 'charset {0:charset}',
+            'CHARSET-COLOR': (
+                # windex just says '???'
+                'charset color {0:csvargs}'
+            ),
+        },
+    )(op.args)
 
 
 @regop('o5_expression')
@@ -580,7 +608,7 @@ def o5_soundKludge_wd(op):
 def o5_pseudoRoom_wd(op):
     room, *rooms, term = op.args
     assert ord(term.op) == 0
-    rooms = ' '.join(value(val, sem="room") for val in rooms)
+    rooms = ' '.join(value(val, sem='room') for val in rooms)
     return fstat('pseudo-room {0:room} is {rooms}', room, rooms=rooms)
 
 
@@ -621,12 +649,14 @@ def o5_delay_wd(op):
 
 @regop('o5_wait')
 def o5_wait_wd(op):
-    return builder({
-        'SO_WAIT_FOR_ACTOR': 'wait-for-actor {0:object}',
-        'SO_WAIT_FOR_MESSAGE': 'wait-for-message',
-        'SO_WAIT_FOR_CAMERA': 'wait-for-camera',
-        'SO_WAIT_FOR_SENTENCE': 'wait-for-sentence',
-    })(op.args)
+    return builder(
+        {
+            'SO_WAIT_FOR_ACTOR': 'wait-for-actor {0:object}',
+            'SO_WAIT_FOR_MESSAGE': 'wait-for-message',
+            'SO_WAIT_FOR_CAMERA': 'wait-for-camera',
+            'SO_WAIT_FOR_SENTENCE': 'wait-for-sentence',
+        },
+    )(op.args)
 
 
 @regop('o5_getObjectState')
@@ -641,10 +671,12 @@ def o5_getObjectOwner_wd(op):
 
 @regop('o5_matrixOps')
 def o5_matrixOps_wd(op):
-    return builder({
-        'SET-BOX-STATUS': 'set-box {0} to {1:box-status}',
-        'SET-BOX-PATH': 'set-box-path',
-    })(op.args)
+    return builder(
+        {
+            'SET-BOX-STATUS': 'set-box {0} to {1:box-status}',
+            'SET-BOX-PATH': 'set-box-path',
+        },
+    )(op.args)
 
 
 @regop('o5_lights')
@@ -695,83 +727,89 @@ def o5_actorOps_wd(op, version=5):
     # [00000008] actor #12 costume #208 BYTE hex=0x15 dec=21 BYTE hex=0x13 dec=19 BYTE hex=0x02 dec=2 BYTE hex=0x02 dec=2 default BYTE hex=0x02 dec=2
     # actor #12 costume #208 follow-boxes always-zclip #2 step-dist #8,#2
     actor, *args = op.args
-    params = builder({
-        'SO_COSTUME': 'costume {0:costume}',
-        'SO_STEP_DIST': 'step-dist {0},{1}',
-        'SO_SOUND': 'sound {0:sound}',
-        'SO_WALK_ANIMATION': 'walk-animation {0:chore}',
-        'SO_TALK_ANIMATION': 'talk-animation {0:chore},{1:chore}',
-        'SO_STAND_ANIMATION': 'stand-animation {0:chore}',
-        'SO_ANIMATION': (
-            # SO_ANIMATION  # text-offset, stop, turn, face????
-            'text-offset {0},{1}'
-        ),
-        'SO_DEFAULT': 'default',
-        'SO_ELEVATION': 'elevation {0}',
-        'SO_ANIMATION_DEFAULT': 'animation default',
-        'SO_PALETTE': (
-            # yield f'color {0:color} is {1:color}'
-            'palette {0:color} in-slot {1:color}'
-        ),
-        'SO_TALK_COLOR': 'talk-color {0:color}',
-        'SO_ACTOR_NAME': 'name {0:msg}',
-        'SO_INIT_ANIMATION': 'init-animation {0:chore}',
-        'SO_ACTOR_WIDTH': 'width {0}',
-        'SO_ACTOR_SCALE': 'scale {0}' if version == 4 else 'scale {0} {1}',
-        'SO_NEVER_ZCLIP': 'never-zclip',
-        'SO_ALWAYS_ZCLIP': 'always-zclip {0}',
-        'SO_IGNORE_BOXES': 'ignore-boxes',
-        'SO_FOLLOW_BOXES': 'follow-boxes',
-        'SO_ANIMATION_SPEED': 'animation-speed {0}',
-        'SO_SHADOW': 'special-draw {0:effect}',
-    })
+    params = builder(
+        {
+            'SO_COSTUME': 'costume {0:costume}',
+            'SO_STEP_DIST': 'step-dist {0},{1}',
+            'SO_SOUND': 'sound {0:sound}',
+            'SO_WALK_ANIMATION': 'walk-animation {0:chore}',
+            'SO_TALK_ANIMATION': 'talk-animation {0:chore},{1:chore}',
+            'SO_STAND_ANIMATION': 'stand-animation {0:chore}',
+            'SO_ANIMATION': (
+                # SO_ANIMATION  # text-offset, stop, turn, face????
+                'text-offset {0},{1}'
+            ),
+            'SO_DEFAULT': 'default',
+            'SO_ELEVATION': 'elevation {0}',
+            'SO_ANIMATION_DEFAULT': 'animation default',
+            'SO_PALETTE': (
+                # yield f'color {0:color} is {1:color}'
+                'palette {0:color} in-slot {1:color}'
+            ),
+            'SO_TALK_COLOR': 'talk-color {0:color}',
+            'SO_ACTOR_NAME': 'name {0:msg}',
+            'SO_INIT_ANIMATION': 'init-animation {0:chore}',
+            'SO_ACTOR_WIDTH': 'width {0}',
+            'SO_ACTOR_SCALE': 'scale {0}' if version == 4 else 'scale {0} {1}',
+            'SO_NEVER_ZCLIP': 'never-zclip',
+            'SO_ALWAYS_ZCLIP': 'always-zclip {0}',
+            'SO_IGNORE_BOXES': 'ignore-boxes',
+            'SO_FOLLOW_BOXES': 'follow-boxes',
+            'SO_ANIMATION_SPEED': 'animation-speed {0}',
+            'SO_SHADOW': 'special-draw {0:effect}',
+        },
+    )
 
     return fstat('actor {0:object} {params}', actor, params=params(args))
 
 
 @regop('o5_roomOps')
 def o5_roomOps_wd(op, version=5):
-    return builder({
-        'SO_ROOM_SCROLL': 'room-scroll {0} to {1}',
-        'SO_ROOM_COLOR': 'room-color {0} in-slot {1}',
-        'SO_ROOM_SCREEN': 'set-screen {0} to {1}',
-        'SO_ROOM_PALETTE': 'palette {0} in-slot {1}' if version < 5 else 'palette {0} {1} {2} in-slot {4}',
-        'SO_ROOM_SHAKE_ON': 'shake on {0} {1}' if version == 3 else 'shake on',
-        'SO_ROOM_SHAKE_OFF': 'shake off {0} {1}' if version == 3 else 'shake off',
-        'SO_ROOM_INTENSITY': (
-            # windex displays empty string here for some reason
-            'palette intensity {0} in-slot {1} to {2}'
-        ),
-        'SO_ROOM_SAVEGAME': (
-            # windex output: saveload-game #1 in-slot #26
-            # according to SCUMM reference, original scripts might have save-game / load-game according to first arg (1 for save 2 for load)
-            'saveload-game {0} in-slot {1}'
-        ),
-        'SO_ROOM_FADE': (
-            # TODO: map fades value to name
-            'fades {0:fade}'
-        ),
-        'SO_RGB_ROOM_INTENSITY': (
-            # windex displays empty string here for some reason
-            # not found in SCUMM refrence, string is made up
-            'palette intensity [rgb] {0} {1} {2} in-slot {4} to {5}'
-        ),
-        'SO_ROOM_SHADOW': (
-            # windex displays empty string here for some reason
-            # not found in SCUMM refrence, string is made up
-            'room-shadow [rgb] {0} {1} {2} in-slot {4} to {5}'
-        ),
-        'SO_SAVE_STRING': 'save-string {0} {1:msg}',
-        'SO_LOAD_STRING': 'load-string {0} {1:msg}',
-        'SO_ROOM_TRANSFORM': (
-            # windex displays empty string here for some reason
-            'palette transform {0} {2} to {3} within {5}'
-        ),
-        'SO_CYCLE_SPEED': (
-            # unverified
-            'palette cycle-speed {0} is {1}'
-        ),
-    })(op.args)
+    return builder(
+        {
+            'SO_ROOM_SCROLL': 'room-scroll {0} to {1}',
+            'SO_ROOM_COLOR': 'room-color {0} in-slot {1}',
+            'SO_ROOM_SCREEN': 'set-screen {0} to {1}',
+            'SO_ROOM_PALETTE': 'palette {0} in-slot {1}'
+            if version < 5
+            else 'palette {0} {1} {2} in-slot {4}',
+            'SO_ROOM_SHAKE_ON': 'shake on {0} {1}' if version == 3 else 'shake on',
+            'SO_ROOM_SHAKE_OFF': 'shake off {0} {1}' if version == 3 else 'shake off',
+            'SO_ROOM_INTENSITY': (
+                # windex displays empty string here for some reason
+                'palette intensity {0} in-slot {1} to {2}'
+            ),
+            'SO_ROOM_SAVEGAME': (
+                # windex output: saveload-game #1 in-slot #26
+                # according to SCUMM reference, original scripts might have save-game / load-game according to first arg (1 for save 2 for load)
+                'saveload-game {0} in-slot {1}'
+            ),
+            'SO_ROOM_FADE': (
+                # TODO: map fades value to name
+                'fades {0:fade}'
+            ),
+            'SO_RGB_ROOM_INTENSITY': (
+                # windex displays empty string here for some reason
+                # not found in SCUMM refrence, string is made up
+                'palette intensity [rgb] {0} {1} {2} in-slot {4} to {5}'
+            ),
+            'SO_ROOM_SHADOW': (
+                # windex displays empty string here for some reason
+                # not found in SCUMM refrence, string is made up
+                'room-shadow [rgb] {0} {1} {2} in-slot {4} to {5}'
+            ),
+            'SO_SAVE_STRING': 'save-string {0} {1:msg}',
+            'SO_LOAD_STRING': 'load-string {0} {1:msg}',
+            'SO_ROOM_TRANSFORM': (
+                # windex displays empty string here for some reason
+                'palette transform {0} {2} to {3} within {5}'
+            ),
+            'SO_CYCLE_SPEED': (
+                # unverified
+                'palette cycle-speed {0} is {1}'
+            ),
+        },
+    )(op.args)
 
 
 @regop('o5_print')
@@ -791,16 +829,17 @@ def o5_print_wd(op):
             0xFF: 'print-line {params}',
         }.get(
             ord(actor.op) if isinstance(actor, ByteValue) else None,
-            'say-line {0:object} {params}'
+            'say-line {0:object} {params}',
         ),
         actor,
-        params=string_params(args)
+        params=string_params(args),
     )
 
 
 @regop('o5_setObjectName')
 def o5_setObjectName_wd(op):
     return fstat('new-name-of {0:object} is {1:msg}', *op.args)
+
 
 @regop('o5_getDist')
 def o5_getDist_wd(op):
@@ -854,19 +893,23 @@ def o5_jumpRelative_wd(op):
 
 @regop('o5_beginOverride')
 def o5_beginOverride_wd(op):
-    return builder({
-        'OFF': 'override off',
-        'ON': 'override 1',
-    })(op.args)
+    return builder(
+        {
+            'OFF': 'override off',
+            'ON': 'override 1',
+        },
+    )(op.args)
 
 
 @regop('o5_systemOps')
 def o5_systemOps_wd(op):
-    return builder({
-        'SO_RESTART': 'restart',
-        'SO_PAUSE': 'pause',
-        'SO_QUIT': 'quit',
-    })(op.args)
+    return builder(
+        {
+            'SO_RESTART': 'restart',
+            'SO_PAUSE': 'pause',
+            'SO_QUIT': 'quit',
+        },
+    )(op.args)
 
 
 @regop('o5_printEgo')
@@ -918,27 +961,29 @@ def o5_add_wd(op):
 @regop('o5_verbOps')
 def o5_verbOps_wd(op):
     verb, *args = op.args
-    params = builder({
-        'SO_VERB_IMAGE': 'image {0}',
-        'SO_VERB_NAME': 'name {0:msg}',
-        'SO_VERB_COLOR': 'color {0:color}',
-        'SO_VERB_HICOLOR': 'hicolor {0:color}',
-        'SO_VERB_AT': 'at {0},{1}',
-        'SO_VERB_ON': 'on',
-        'SO_VERB_OFF': 'off',
-        'SO_VERB_DELETE': 'delete',
-        'SO_VERB_NEW': 'new',
-        'SO_VERB_DIMCOLOR': 'dimcolor {0:color}',
-        'SO_VERB_DIM': 'dim',
-        'SO_VERB_KEY': 'key {0}',
-        'SO_VERB_CENTER': 'center',
-        'SO_VERB_NAME_STR': (
-            # windex displays ?????????
-            'name *{0}'
-        ),
-        'IMAGE-ROOM': 'image {0:object} in-room {1:room}',
-        'BAKCOLOR': 'bakcolor {0:color}',
-    })
+    params = builder(
+        {
+            'SO_VERB_IMAGE': 'image {0}',
+            'SO_VERB_NAME': 'name {0:msg}',
+            'SO_VERB_COLOR': 'color {0:color}',
+            'SO_VERB_HICOLOR': 'hicolor {0:color}',
+            'SO_VERB_AT': 'at {0},{1}',
+            'SO_VERB_ON': 'on',
+            'SO_VERB_OFF': 'off',
+            'SO_VERB_DELETE': 'delete',
+            'SO_VERB_NEW': 'new',
+            'SO_VERB_DIMCOLOR': 'dimcolor {0:color}',
+            'SO_VERB_DIM': 'dim',
+            'SO_VERB_KEY': 'key {0}',
+            'SO_VERB_CENTER': 'center',
+            'SO_VERB_NAME_STR': (
+                # windex displays ?????????
+                'name *{0}'
+            ),
+            'IMAGE-ROOM': 'image {0:object} in-room {1:room}',
+            'BAKCOLOR': 'bakcolor {0:color}',
+        },
+    )
 
     return fstat('verb {0:verb} {params}', verb, params=params(args))
 
@@ -1046,7 +1091,12 @@ def inline_complex_temp(asts):
             elif f'{value(complex_temp)}' in str(st):
                 assert complex_value is not None
                 if isinstance(st, ConditionalJump):
-                    seq.append(ConditionalJump(st.expr.replace(f'{value(complex_temp)}', complex_value), st.ref))
+                    seq.append(
+                        ConditionalJump(
+                            st.expr.replace(f'{value(complex_temp)}', complex_value),
+                            st.ref,
+                        ),
+                    )
                 else:
                     seq.append(str(st).replace(f'{value(complex_temp)}', complex_value))
             else:
@@ -1070,7 +1120,6 @@ def collapse_override(asts):
 
 
 def transform_asts(indent, asts, transform=True):
-
     if not transform:
         return asts
 
@@ -1098,7 +1147,7 @@ def transform_asts(indent, asts, transform=True):
         elif isinstance(st, str) and st.startswith('override &'):
             deps[label].append(st)
         if str(st) not in {'end-object', 'end-script'}:
-            deps[label].append(blocks[idx+1][0])
+            deps[label].append(blocks[idx + 1][0])
         assert len(deps[label]) <= 2, len(deps[label])
 
     # Find for loops:
@@ -1113,7 +1162,7 @@ def transform_asts(indent, asts, transform=True):
                 continue
 
             if len(exits) == 1:
-                ex, = exits
+                (ex,) = exits
                 if isinstance(ex, str) and ex.startswith('_') and label != '_entry':
                     asts[label].extend(asts[ex])
                     del asts[ex]
@@ -1146,8 +1195,12 @@ def transform_asts(indent, asts, transform=True):
                                 if f'{var} = ' in init:
                                     ext, fall = exits
                                     assert ext == ex
-                                    asts[last_label].append(f'for {init} to {end} {step} {{')
-                                    asts[last_label].extend(f'\t{st}' for st in asts[label])
+                                    asts[last_label].append(
+                                        f'for {init} to {end} {step} {{',
+                                    )
+                                    asts[last_label].extend(
+                                        f'\t{st}' for st in asts[label]
+                                    )
                                     asts[last_label].append('}')
                                     del asts[label]
                                     deleted |= {label}
@@ -1171,7 +1224,9 @@ def transform_asts(indent, asts, transform=True):
                     if adr(ex.ref) == f'&{label}':
                         ext = asts[label].pop()
                         assert ext == ex
-                        if [str(st) for st in asts[label]] == ['break-here'] and isinstance(ex, ConditionalJump):
+                        if [str(st) for st in asts[label]] == [
+                            'break-here',
+                        ] and isinstance(ex, ConditionalJump):
                             asts[label].clear()
                             asts[label].append(f'break-until ({ex.expr})')
                         else:
@@ -1183,14 +1238,13 @@ def transform_asts(indent, asts, transform=True):
                                 asts[label].append('}')
                             elif isinstance(ex, ConditionalJump):
                                 asts[label].append(f'}} until ({ex.expr})')
-                                
+
                             else:
                                 raise ValueError()
                         deps[label] = list(falls)
                         changed = True
                         deref |= {label}
                         break
-
 
             # if statements
             if len(exits) == 2:
@@ -1244,7 +1298,6 @@ def transform_asts(indent, asts, transform=True):
                     #                 deleted |= {fall, deps[fall][1]}
                     #                 deref |= {adr(fexits[0].ref)[1:]}
                     #                 break
-
 
             # # case statement
             # if len(exits) == 2:
@@ -1319,9 +1372,17 @@ def transform_asts(indent, asts, transform=True):
 
                 if not skip_deref:
                     for lb in keys:
-                        deps[lb] = [f'_{label}' if str(ex) == label else ex for ex in deps[lb]]
-                    asts = {f'_{label}' if label == lbl else lbl: block for lbl, block in asts.items()}
-                    deps = {f'_{label}' if label == lbl else lbl: block for lbl, block in deps.items()}
+                        deps[lb] = [
+                            f'_{label}' if str(ex) == label else ex for ex in deps[lb]
+                        ]
+                    asts = {
+                        f'_{label}' if label == lbl else lbl: block
+                        for lbl, block in asts.items()
+                    }
+                    deps = {
+                        f'_{label}' if label == lbl else lbl: block
+                        for lbl, block in deps.items()
+                    }
 
         # print(asts)
         # print(deps)
@@ -1366,7 +1427,9 @@ def get_elem_info(elem):
         pref = list(parse_verb_meta(pref))
         entries = {off: idx[0] for idx, off in pref}
     else:
-        scr_id = int.from_bytes(pref, byteorder='little', signed=False) if pref else None
+        scr_id = (
+            int.from_bytes(pref, byteorder='little', signed=False) if pref else None
+        )
         assert scr_id is None or scr_id == gid
     return script_data, gid, entries
 
@@ -1461,7 +1524,8 @@ if __name__ == '__main__':
     root = gameres.read_resources(
         max_depth=5,
         schema=narrow_schema(
-            SCHEMA, {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', *script_map}
+            SCHEMA,
+            {'LECF', 'LFLF', 'RMDA', 'ROOM', 'OBCD', *script_map},
         ),
     )
 
@@ -1489,7 +1553,7 @@ if __name__ == '__main__':
                 dump_script_file(room_no, room, decompile_script, f)
 
     if USE_SEMANTIC_CONTEXT:
-        with open(f"{script_dir}/sem.def", 'w') as f:
+        with open(f'{script_dir}/sem.def', 'w') as f:
             for sem, vals in semlog.items():
                 for val in sorted(vals.keys()):
                     semval = semlog[sem][val]

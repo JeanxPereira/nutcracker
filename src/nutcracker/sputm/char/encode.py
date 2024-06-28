@@ -8,7 +8,7 @@ import numpy as np
 from nutcracker.codex.bpp_codec import encode_bpp_char
 from nutcracker.codex.rle import encode_lined_rle
 from nutcracker.graphics import grid
-from nutcracker.kernel.element import Element
+from nutcracker.kernel2.element import Element
 from nutcracker.utils.funcutils import flatten
 
 from ..preset import sputm
@@ -100,6 +100,8 @@ def encode_char(ref: Element, filename: str) -> bytes:
                 offset += len(frame)
         out_data = idx_stream.getvalue() + data_stream.getvalue()
         out = (len(out_data) - dataend_diff).to_bytes(
-            4, byteorder='little', signed=False
+            4,
+            byteorder='little',
+            signed=False,
         ) + out_data
         return out

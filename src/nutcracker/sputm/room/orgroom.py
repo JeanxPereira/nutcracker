@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 
-from dataclasses import dataclass
 import io
 import os
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass
+
+from nutcracker.kernel2.element import Element
 
 from ..preset import sputm
 from .encode_image import encode_block_v8
@@ -20,8 +23,9 @@ def read_room(header, rmim):
         # TODO: check for multiple IMAG in room bg (different image state)
         assert rmim.tag == 'IMAG'
         wrap = sputm.find('WRAP', rmim)
-        assert len(wrap.children) == 2, len(wrap.children)
-        yield from wrap.children[1:]
+        _, *frames = wrap.children()
+        assert len(frames) == 1, len(frames)
+        yield from frames
 
 
 @dataclass
@@ -49,14 +53,34 @@ def read_objects(room, version):
                 path = imxx.attribs['path']
                 name = f'{obj_id:04d}_{imxx.tag}'
 
-                yield path, name, imxx.children[0], ObjectHeader(height=obj_height, width=obj_width, xoff=obj_x, yoff=obj_y)
+                yield (
+                    path,
+                    name,
+                    imxx.children[0],
+                    ObjectHeader(
+                        height=obj_height,
+                        width=obj_width,
+                        xoff=obj_x,
+                        yoff=obj_y,
+                    ),
+                )
         else:
             # Game version == 8
             obj_name, obj_height, obj_width, obj_x, obj_y = read_imhd_v8(imhd)
             for idx, imag in enumerate(sputm.findall('IMAG', obim)):
                 assert idx == 0
                 wrap = sputm.find('WRAP', imag)
-                yield wrap.attribs['path'], obj_name, wrap, ObjectHeader(height=obj_height, width=obj_width, xoff=obj_x, yoff=obj_y)
+                yield (
+                    wrap.attribs['path'],
+                    obj_name,
+                    wrap,
+                    ObjectHeader(
+                        height=obj_height,
+                        width=obj_width,
+                        xoff=obj_x,
+                        yoff=obj_y,
+                    ),
+                )
                 # for iidx, bomp in enumerate(wrap.children[1:]):
 
                 #     path = bomp.attribs['path']
@@ -65,8 +89,15 @@ def read_objects(room, version):
                 #     yield path, name, bomp, obj_x, obj_y
 
 
-def encode_images_v8(basedir, imag, obj_name, room_id, rnam):
-    for iidx, imxx in enumerate(imag.children[1:]):
+def encode_images_v8(
+    basedir: str,
+    imag: Element,
+    obj_name: str,
+    room_id: int,
+    rnam: str,
+) -> Iterator[tuple[Element, bytes | None]]:
+    _, *frames = imag.children()
+    for iidx, imxx in enumerate(frames):
         path = imxx.attribs['path']
         name = f'{obj_name}_{iidx:04d}'
 
@@ -74,7 +105,7 @@ def encode_images_v8(basedir, imag, obj_name, room_id, rnam):
         im_path = im_path.replace(os.path.sep, '_')
         im_path = os.path.join(basedir, f'{im_path}.png')
 
-        chunk = sputm.mktag(imxx.tag, imxx.data)
+        chunk = bytes(sputm.mktag(imxx.tag, imxx.data))
         s = sputm.generate_schema(chunk)
         image = next(sputm(schema=s).map_chunks(chunk))
         print(image)
@@ -84,18 +115,20 @@ def encode_images_v8(basedir, imag, obj_name, room_id, rnam):
             if image.tag == 'SMAP':
                 zpln = sputm.find('ZPLN', image)
                 assert (
-                    sputm.mktag('BSTR', sputm.find('BSTR', image).data)
-                    + sputm.mktag('ZPLN', zpln.data)
+                    bytes(sputm.mktag('BSTR', sputm.find('BSTR', image).data))
+                    + bytes(sputm.mktag('ZPLN', zpln.data))
                     == imxx.data
                 )
                 assert zpln
-                encoded += sputm.mktag('ZPLN', zpln.data)
+                encoded += bytes(sputm.mktag('ZPLN', zpln.data))
                 print(zpln.data)
                 print('ORIG')
                 sputm.render(image)
                 print('ENCODED')
                 sputm.render(
-                    next(sputm(schema=s).map_chunks(sputm.mktag('SMAP', encoded)))
+                    next(
+                        sputm(schema=s).map_chunks(bytes(sputm.mktag('SMAP', encoded)))
+                    ),
                 )
             yield imxx, encoded
             print((im_path, imxx))
@@ -106,53 +139,75 @@ def encode_images_v8(basedir, imag, obj_name, room_id, rnam):
             yield imxx, None
 
 
-def make_wrap(images):
+def make_wrap(images: Sequence[tuple[Element, bytes | None]]) -> bytes:
     off = 8 + 4 * len(images)
     with io.BytesIO() as offstream, io.BytesIO() as datastream:
         for imxx, custome in images:
-            elim = sputm.mktag(imxx.tag, custome if custome else imxx.data)
+            elim = bytes(sputm.mktag(imxx.tag, custome if custome else imxx.data))
             offstream.write(off.to_bytes(4, byteorder='little', signed=False))
             datastream.write(elim)
             off += len(elim)
-        return sputm.mktag(
-            'WRAP', sputm.mktag('OFFS', offstream.getvalue()) + datastream.getvalue()
+        return bytes(
+            sputm.mktag(
+                'WRAP',
+                bytes(sputm.mktag('OFFS', offstream.getvalue()))
+                + datastream.getvalue(),
+            )
         )
 
 
-def make_room_images_patch(root, basedir, rnam, version):
+def make_room_images_patch(
+    root: Iterable[Element],
+    basedir: str,
+    rnam: str,
+    version: int,
+) -> Iterator[tuple[str, bytes]]:
     for t in root:
-        for lflf in get_rooms(t):
+        for lflf in get_rooms(t.children()):
             header, palette, room, rmim = read_room_settings(lflf)
             room_bg = None
             room_id = lflf.attribs.get('gid')
 
             for imxx in read_room(header, rmim):
-
                 im_path = (
-                    f"{room_id:04d}_{rnam.get(room_id)}" if room_id in rnam else os.path.dirname(imxx.attribs['path'])
+                    f'{room_id:04d}_{rnam.get(room_id)}'
+                    if room_id in rnam
+                    else os.path.dirname(imxx.attribs['path'])
                 )
                 im_path = im_path.replace(os.path.sep, '_')
                 im_path = os.path.join(basedir, 'backgrounds', f'{im_path}.png')
 
-                chunk = sputm.mktag(imxx.tag, imxx.data)
+                chunk = bytes(sputm.mktag(imxx.tag, imxx.data))
                 s = sputm.generate_schema(chunk)
                 image = next(sputm(schema=s).map_chunks(chunk))
 
                 if os.path.exists(im_path):
                     # res_path = os.path.join(dirname, imxx.attribs['path'])
-                    encoded = encode_block_v8(im_path, imxx.tag, version=version, ref=imxx)
+                    encoded = encode_block_v8(
+                        im_path,
+                        imxx.tag,
+                        version=version,
+                        ref=imxx,
+                    )
                     if encoded:
                         if image.tag == 'SMAP':
                             if version >= 8:
                                 zpln = sputm.find('ZPLN', image)
                                 assert (
-                                    sputm.mktag('BSTR', sputm.find('BSTR', image).data)
-                                    + sputm.mktag('ZPLN', zpln.data)
+                                    bytes(
+                                        sputm.mktag(
+                                            'BSTR', sputm.find('BSTR', image).data
+                                        )
+                                    )
+                                    + bytes(sputm.mktag('ZPLN', zpln.data))
                                     == imxx.data
                                 )
                                 assert zpln
-                                encoded += sputm.mktag('ZPLN', zpln.data)
-                        yield imxx.attribs['path'], sputm.mktag(imxx.tag, encoded)
+                                encoded += bytes(sputm.mktag('ZPLN', zpln.data))
+                        yield (
+                            imxx.attribs['path'],
+                            bytes(sputm.mktag(imxx.tag, encoded)),
+                        )
                         # os.makedirs(os.path.dirname(res_path), exist_ok=True)
                         # write_file(res_path, sputm.mktag(imxx.tag, encoded))
                     print((im_path, imxx.attribs['path'], imxx.tag))
@@ -161,8 +216,12 @@ def make_room_images_patch(root, basedir, rnam, version):
                 if imag.tag == 'WRAP':
                     images = list(
                         encode_images_v8(
-                            os.path.join(basedir, 'objects'), imag, obj_name, room_id, rnam
-                        )
+                            os.path.join(basedir, 'objects'),
+                            imag,
+                            obj_name,
+                            room_id,
+                            rnam,
+                        ),
                     )
                     if any(custome is not None for imxx, custome in images):
                         # res_path = os.path.join(dirname, imag.attribs['path'])
@@ -195,16 +254,24 @@ def make_room_images_patch(root, basedir, rnam, version):
                     im_path = im_path.replace(os.path.sep, '_')
                     im_path = os.path.join(basedir, 'objects', f'{im_path}.png')
 
-                    chunk = sputm.mktag(imag.tag, imag.data)
+                    chunk = bytes(sputm.mktag(imag.tag, imag.data))
                     s = sputm.generate_schema(chunk)
                     image = next(sputm(schema=s).map_chunks(chunk))
 
                     # print(im_path, imag)
                     if os.path.exists(im_path):
                         print('exists')
-                        encoded = encode_block_v8(im_path, imag.tag, version=version, ref=imag)
+                        encoded = encode_block_v8(
+                            im_path,
+                            imag.tag,
+                            version=version,
+                            ref=imag,
+                        )
                         if encoded:
-                            yield imag.attribs['path'], sputm.mktag(imag.tag, encoded)
+                            yield (
+                                imag.attribs['path'],
+                                bytes(sputm.mktag(imag.tag, encoded)),
+                            )
                             # os.makedirs(os.path.dirname(res_path), exist_ok=True)
                             # write_file(res_path, sputm.mktag(imxx.tag, encoded))
                         print((im_path, imag.attribs['path'], imag.tag))

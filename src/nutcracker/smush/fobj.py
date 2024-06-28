@@ -6,12 +6,13 @@ from dataclasses import dataclass
 from typing import NamedTuple
 
 from nutcracker.kernel.structured import StructuredTuple
+from nutcracker.kernel2.chunk import ArrayBuffer
 
 UINT32BE = struct.Struct('>I')
 
 
 @dataclass(frozen=True, order=True)
-class FrameObjectHeader(object):
+class FrameObjectHeader:
     codec: int
     x1: int
     y1: int
@@ -49,7 +50,7 @@ def decompress(data: bytes) -> bytes:
     return data
 
 
-def compress(data: bytes) -> bytes:
+def compress(data: ArrayBuffer) -> bytes:
     decompressed_size = UINT32BE.pack(len(data))
     compressed = zlib.compress(data, 9)
     return decompressed_size + compressed

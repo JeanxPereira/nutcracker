@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
+from collections.abc import Iterator, Sequence
 from operator import attrgetter
-from typing import Iterator, Optional, Sequence, Tuple, Union
 
 from nutcracker.graphics.grid import get_bg_color
 from nutcracker.graphics.image import (
@@ -17,7 +17,7 @@ def resize_pil_image(
     w: int,
     h: int,
     bg: int,
-    im: Union[TImage, Matrix],
+    im: TImage,
     loc: ImagePosition,
 ) -> TImage:
     nbase = convert_to_pil_image([[bg] * w] * h)
@@ -27,9 +27,8 @@ def resize_pil_image(
 
 
 def save_frame_image(
-    frames: Sequence[Tuple[ImagePosition, TImage]]
+    frames: Sequence[tuple[ImagePosition, TImage]],
 ) -> Iterator[TImage]:
-
     rlocs, frames = zip(*frames)
     im_frames = (convert_to_pil_image(frame) for frame in frames)
 
@@ -46,20 +45,16 @@ def save_frame_image(
     h = next(loc['y1'] + loc['y2'] for loc in locs)
     print((w, h))
 
-    stack = (
+    yield from (
         resize_pil_image(w, h, get_bg(idx), frame, loc)
         for idx, (frame, loc) in enumerate(zip(im_frames, locs))
     )
 
-    for frame in stack:
-        yield frame
-
 
 def save_single_frame_image(
-    frame: Tuple[ImagePosition, Matrix],
-    resize: Optional[Tuple[int, int]] = None,
+    frame: tuple[ImagePosition, Matrix],
+    resize: tuple[int, int] | None = None,
 ) -> TImage:
-
     loc, frame_data = frame
     if not resize:
         return convert_to_pil_image(frame_data)

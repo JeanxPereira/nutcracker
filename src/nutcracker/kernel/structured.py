@@ -1,23 +1,20 @@
 import struct
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import IO, Callable, Generic, Protocol, Sequence, TypeVar, cast
+from typing import IO, Generic, Protocol, TypeVar, cast
 
 T_Struct = TypeVar('T_Struct')
 
 
 class Structured(Protocol[T_Struct]):
     @property
-    def size(self) -> int:
-        ...
+    def size(self) -> int: ...
 
-    def unpack(self, stream: IO[bytes]) -> T_Struct:
-        ...
+    def unpack(self, stream: IO[bytes]) -> T_Struct: ...
 
-    def unpack_from(self, data: bytes, offset: int = 0) -> T_Struct:
-        ...
+    def unpack_from(self, data: bytes, offset: int = 0) -> T_Struct: ...
 
-    def pack(self, data: T_Struct) -> bytes:
-        ...
+    def pack(self, data: T_Struct) -> bytes: ...
 
 
 @dataclass(frozen=True)

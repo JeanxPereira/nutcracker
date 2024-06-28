@@ -1,6 +1,7 @@
 from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
-from typing import Any, Dict, Iterable, Iterator, Optional, Sequence, Union
+from typing import Any, Union
 
 from .chunk import Chunk
 
@@ -8,7 +9,7 @@ ElementTree = Union[Iterator['Element'], 'Element', None]
 
 
 @dataclass
-class Element(object):
+class Element:
     """Indexing metadata for chunk containers
 
     chunk: Chunk
@@ -19,10 +20,10 @@ class Element(object):
     """
 
     chunk: Chunk
-    attribs: Dict[str, Any]
+    attribs: dict[str, Any]
     children: Sequence['Element']
 
-    _data: Optional[bytes] = field(default=None, repr=False, init=False)
+    _data: bytes | None = field(default=None, repr=False, init=False)
 
     @property
     def tag(self) -> str:
@@ -52,7 +53,7 @@ class Element(object):
 
 def _format_children(
     root: Iterable[Element],
-    max_show: Optional[int] = None,
+    max_show: int | None = None,
 ) -> Iterator[str]:
     counts = Counter(child.tag for child in root)
     for idx, (tag, count) in enumerate(counts.items()):

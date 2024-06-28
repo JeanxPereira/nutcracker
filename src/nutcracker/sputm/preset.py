@@ -1,5 +1,13 @@
-from nutcracker.kernel import preset, settings
+from nutcracker.kernel2.chunk import IFFChunkHeader
+from nutcracker.kernel2.preset import Preset
 
 from .schema import SCHEMA
 
-sputm = preset.shell(align=1, chunk=settings.IFF_CHUNK_IN, schema=SCHEMA, skip_byte=0x80)
+sputm = Preset(
+    header_dtype=IFFChunkHeader,
+    alignment=1,
+    inclheader=True,
+    skip_byte=0x80,
+    schema=SCHEMA,
+    errors='ignore',
+)

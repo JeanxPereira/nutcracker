@@ -2,7 +2,7 @@
 
 import binascii
 import os
-from typing import Iterable
+from collections.abc import Iterable
 
 from nutcracker.sputm.build import rebuild_resources
 from nutcracker.utils.fileio import read_file
@@ -15,7 +15,8 @@ def get_all_sounds(root, abs_off=0):
                 yield elem.attribs['offset'] + abs_off, elem.data
             else:
                 yield from get_all_sounds(
-                    elem.children, abs_off=elem.attribs['offset'] + abs_off + 8
+                    elem.children(),
+                    abs_off=elem.attribs['offset'] + abs_off + 8,
                 )
 
 
@@ -26,13 +27,10 @@ def inject_sound_chunks(root, sounds):
         if elem.tag in {'LECF', 'LFLF', 'SOUN'}:
             if elem.tag == 'SOUN':
                 attribs = elem.attribs
-                elem.data = next(sounds)
+                elem.update_raw(next(sounds))
                 elem.attribs = attribs
             else:
-                elem.children = list(inject_sound_chunks(elem, sounds))
-                elem.data = sputm.write_chunks(
-                    sputm.mktag(e.tag, e.data) for e in elem.children
-                )
+                elem.update_children(inject_sound_chunks(elem.children(), sounds))
         offset += len(elem.data) + 8
         elem.attribs['size'] = len(elem.data)
         yield elem
@@ -50,9 +48,9 @@ def read_streams(src_dir: str, ext: str, files: Iterable[str]) -> Iterable[bytes
 if __name__ == '__main__':
     import argparse
 
-    from nutcracker.sputm.tree import open_game_resource, narrow_schema
     from nutcracker.sputm.preset import sputm
     from nutcracker.sputm.schema import SCHEMA
+    from nutcracker.sputm.tree import narrow_schema, open_game_resource
 
     parser = argparse.ArgumentParser(description='read smush file')
     group = parser.add_mutually_exclusive_group()
@@ -60,16 +58,17 @@ if __name__ == '__main__':
     group.add_argument('--inject', '-i', action='store_true')
     parser.add_argument('filename', help='filename to read from')
     parser.add_argument(
-        '--textfile', '-t', help='save strings to file', default='embedded.txt'
+        '--textfile',
+        '-t',
+        help='save strings to file',
+        default='embedded.txt',
     )
     args = parser.parse_args()
 
     gameres = open_game_resource(args.filename)
 
     root = gameres.read_resources(
-        schema=narrow_schema(
-            SCHEMA, {'LECF', 'LFLF', 'SOUN'}
-        )
+        schema=narrow_schema(SCHEMA, {'LECF', 'LFLF', 'SOUN'}),
     )
 
     if args.extract:

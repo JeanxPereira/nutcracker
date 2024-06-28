@@ -1,12 +1,6 @@
 import itertools
+from collections.abc import Callable, Iterable, Iterator, Sequence
 from typing import (
-    Callable,
-    Iterable,
-    Iterator,
-    List,
-    Optional,
-    Sequence,
-    Tuple,
     TypeVar,
     cast,
 )
@@ -29,7 +23,9 @@ GRID_SIZE = 16
 
 
 def get_bg_color(
-    row_size: int, f: Callable[[int], int], bgs: Sequence[bytes] = BGS
+    row_size: int,
+    f: Callable[[int], int],
+    bgs: Sequence[bytes] = BGS,
 ) -> Callable[[int], int]:
     def get_bg(idx: int) -> int:
         return ord(bgs[f(idx) % len(bgs)])
@@ -38,7 +34,10 @@ def get_bg_color(
 
 
 def read_image_grid(
-    filename: str, w: int = TILE_W, h: int = TILE_H, grid_size: int = GRID_SIZE
+    filename: str,
+    w: int = TILE_W,
+    h: int = TILE_H,
+    grid_size: int = GRID_SIZE,
 ) -> Iterator[TImage]:
     bim = Image.open(filename)
 
@@ -56,7 +55,7 @@ def checkered_grid(
     transparency: int = 0,
     bgs: Sequence[bytes] = BGS,
 ) -> TImage:
-    assert nchars <= grid_size ** 2, nchars
+    assert nchars <= grid_size**2, nchars
 
     bim = convert_to_pil_image([[transparency] * w * grid_size] * h * grid_size)
     get_bg = get_bg_color(grid_size, lambda idx: idx + int(idx / grid_size), bgs=bgs)
@@ -71,7 +70,7 @@ def checkered_grid(
 
 def create_char_grid(
     nchars: int,
-    chars: Iterable[Tuple[int, Tuple[int, int, TImage]]],
+    chars: Iterable[tuple[int, tuple[int, int, TImage]]],
     w: int = TILE_W,
     h: int = TILE_H,
     grid_size: int = GRID_SIZE,
@@ -81,7 +80,12 @@ def create_char_grid(
     bgs: Sequence[bytes] = BGS,
 ) -> TImage:
     bim = checkered_grid(
-        nchars, w=w, h=h, grid_size=grid_size, transparency=transparency, bgs=bgs
+        nchars,
+        w=w,
+        h=h,
+        grid_size=grid_size,
+        transparency=transparency,
+        bgs=bgs,
     )
 
     # idx is character index in ascii table
@@ -99,15 +103,17 @@ def count_in_row(pred: Callable[[T], bool], row: Iterable[T]) -> int:
 
 
 def resize_frame(
-    im: TImage, base_xoff: int = BASE_XOFF, base_yoff: int = BASE_YOFF
-) -> Optional[Tuple[ImagePosition, np.ndarray]]:
+    im: TImage,
+    base_xoff: int = BASE_XOFF,
+    base_yoff: int = BASE_YOFF,
+) -> tuple[ImagePosition, np.ndarray] | None:
     frame = list(np.asarray(im))
     BG = cast(int, frame[-1][-1])
 
     def char_is_bg(c: int) -> bool:
         return c == BG
 
-    def line_is_bg(line: List[int]) -> bool:
+    def line_is_bg(line: list[int]) -> bool:
         return all(char_is_bg(c) for c in line)
 
     if set(funcutils.flatten(frame)) == {BG}:
@@ -124,7 +130,10 @@ def resize_frame(
         return None
 
     loc = ImagePosition(
-        x1=x1 - base_xoff, y1=y1 - base_yoff, x2=x2 - base_xoff, y2=y2 - base_yoff
+        x1=x1 - base_xoff,
+        y1=y1 - base_yoff,
+        x2=x2 - base_xoff,
+        y2=y2 - base_yoff,
     )
 
     return loc, np.asarray(im.crop(crop_area))

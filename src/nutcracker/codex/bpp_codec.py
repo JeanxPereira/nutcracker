@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-from typing import Sequence
+from collections.abc import Sequence
 
 from nutcracker.utils.funcutils import flatten, grouper
 
 
 def decode_bpp_char(
-    data: bytes, width: int, height: int, bpp: int = 1
+    data: bytes,
+    width: int,
+    height: int,
+    bpp: int = 1,
 ) -> Sequence[Sequence[int]]:
     assert width != 0 and height != 0
     # print([f'{x:08b}' for x in data])

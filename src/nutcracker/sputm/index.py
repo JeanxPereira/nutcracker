@@ -3,15 +3,19 @@
 import io
 import operator
 import pprint
+from collections.abc import Callable, Iterable, Iterator
 from functools import partial
 from itertools import takewhile
+from typing import IO
 
 from nutcracker.chiper import xor
+from nutcracker.kernel2.chunk import ArrayBuffer
+from nutcracker.kernel2.element import Element
 
 from .preset import sputm
 
 
-def read_directory_leg(data):
+def read_directory_leg(data: ArrayBuffer) -> Iterator[tuple[int, tuple[int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         rnums = [
@@ -22,10 +26,10 @@ def read_directory_leg(data):
             int.from_bytes(s.read(4), byteorder='little', signed=False)
             for i in range(num)
         ]
-        return enumerate(zip(rnums, offs))
+        return enumerate(zip(rnums, offs, strict=True))
 
 
-def read_directory_leg_v8(data):
+def read_directory_leg_v8(data: ArrayBuffer) -> Iterator[tuple[int, tuple[int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(4), byteorder='little', signed=False)
         rnums = [
@@ -36,10 +40,10 @@ def read_directory_leg_v8(data):
             int.from_bytes(s.read(4), byteorder='little', signed=False)
             for i in range(num)
         ]
-        return enumerate(zip(rnums, offs))
+        return enumerate(zip(rnums, offs, strict=True))
 
 
-def read_rnam(data, key=0xFF):
+def read_rnam(data: ArrayBuffer, key: int = 0xFF) -> Iterator[tuple[int, str]]:
     with io.BytesIO(data) as s:
         while True:
             rnum = int.from_bytes(s.read(1), byteorder='little', signed=False)
@@ -49,30 +53,37 @@ def read_rnam(data, key=0xFF):
             yield rnum, name
 
 
-def readcstr(stream, read_fn):
+def readcstr(
+    stream: IO[bytes],
+    read_fn: Callable[[IO[bytes], int], bytes],
+) -> str | None:
     bound_read = iter(partial(read_fn, stream, 1), b'')
     res = b''.join(takewhile(partial(operator.ne, b'\00'), bound_read))
     return res.decode() if res else None
 
 
-def read_rnam_he(data, key=0xFF):
+def read_rnam_he(
+    data: ArrayBuffer,
+    key: int = 0xFF,
+) -> Iterator[tuple[int, str]]:
     with io.BytesIO(data) as s:
         while True:
             rnum = int.from_bytes(s.read(2), byteorder='little', signed=False)
             if not rnum:
                 break
             name = readcstr(s, partial(xor.read, key=key))
+            assert name is not None
             yield rnum, name
 
 
-def read_anam(data):
+def read_anam(data: ArrayBuffer) -> Iterator[tuple[int, str]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         names = [s.read(9).split(b'\0')[0].decode() for i in range(num)]
         return enumerate(names)
 
 
-def read_dobj(data):
+def read_dobj(data: ArrayBuffer) -> Iterator[tuple[int, tuple[int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         values = list(s.read(num))
@@ -80,7 +91,7 @@ def read_dobj(data):
         return enumerate((val >> 4, val & 0xFF) for val in values)
 
 
-def read_dobj_v8(data):
+def read_dobj_v8(data: ArrayBuffer) -> Iterator[tuple[str, tuple[int, int, int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(4), byteorder='little', signed=False)
         for i in range(num):
@@ -92,7 +103,7 @@ def read_dobj_v8(data):
             yield name, (obj_id, state, room, obj_class)
 
 
-def read_dobj_v7(data):
+def read_dobj_v7(data: ArrayBuffer) -> Iterator[tuple[int, tuple[int, int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         states = list(s.read(num))
@@ -101,10 +112,10 @@ def read_dobj_v7(data):
             int.from_bytes(s.read(4), byteorder='little', signed=False)
             for _ in range(num)
         ]
-        return enumerate(zip(states, rooms, classes))
+        return enumerate(zip(states, rooms, classes, strict=True))
 
 
-def read_dobj_he(data):
+def read_dobj_he(data: ArrayBuffer) -> Iterator[tuple[int, tuple[int, int, int, int]]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         states = list(s.read(num))
@@ -114,10 +125,10 @@ def read_dobj_he(data):
             int.from_bytes(s.read(4), byteorder='little', signed=False)
             for _ in range(num)
         ]
-        return enumerate(zip(states, owners, rooms, classes))
+        return enumerate(zip(states, owners, rooms, classes, strict=True))
 
 
-def read_dlfl(data):
+def read_dlfl(data: ArrayBuffer) -> Iterator[tuple[int, int]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(2), byteorder='little', signed=False)
         offs = [
@@ -127,7 +138,7 @@ def read_dlfl(data):
         return enumerate(offs)
 
 
-def read_directory(data):
+def read_directory(data: ArrayBuffer) -> list[tuple[int, int]]:
     with io.BytesIO(data) as s:
         num = int.from_bytes(s.read(1), byteorder='little', signed=False)
         merged = [
@@ -140,48 +151,51 @@ def read_directory(data):
         return merged
 
 
-def read_inner_uint16le_v7(pid, data, off):
+IdGen = Callable[[int, ArrayBuffer, int], int | None]
+
+
+def read_inner_uint16le_v7(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[12:14], byteorder='little', signed=False)
     return res
 
 
-def read_inner_uint16le(pid, data, off):
+def read_inner_uint16le(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[8:10], byteorder='little', signed=False)
-    # TODO: fix offset for FT + DIG as in the following commented line
-    # res = int.from_bytes(data[12:14], byteorder='little', signed=False)
     return res
 
 
-def read_uint8le(pid, data, off):
+def read_uint8le(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[:1], byteorder='little', signed=False)
     return res
 
 
-def read_uint16le(pid, data, off):
+def read_uint16le(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[:2], byteorder='little', signed=False)
     return res
 
 
-def read_uint32le(pid, data, off):
+def read_uint32le(pid: int, data: ArrayBuffer, off: int) -> int:
     res = int.from_bytes(data[:4], byteorder='little', signed=False)
     return res
 
 
-def compare_pid_off(directory, base: int = 0):
-    def inner(pid, data, off):
+def compare_pid_off(directory: dict[int, tuple[int, int]], base: int = 0) -> IdGen:
+    def inner(pid: int, data: ArrayBuffer, off: int) -> int | None:
         return next((k for k, v in directory.items() if v == (pid, off + base)), None)
 
     return inner
 
 
-def compare_off_he(directory):
-    def inner(pid, data, off):
+def compare_off_he(directory: dict[int, int]) -> IdGen:
+    def inner(pid: int, data: ArrayBuffer, off: int) -> int | None:
         return next((k for k, v in directory.items() if v == off + 16), None)
 
     return inner
 
 
-def read_index_v5tov7(root):
+def read_index_v5tov7(
+    root: Iterable[Element],
+) -> tuple[dict[int, str], dict[str, IdGen]]:
     for t in root:
         sputm.render(t)
         if t.tag == 'RNAM':
@@ -225,7 +239,9 @@ def read_index_v5tov7(root):
     }
 
 
-def read_index_v7(root):
+def read_index_v7(
+    root: Iterable[Element],
+) -> tuple[dict[int, str], dict[str, IdGen]]:
     for t in root:
         sputm.render(t)
         if t.tag == 'RNAM':
@@ -258,7 +274,7 @@ def read_index_v7(root):
             pprint.pprint(anam)
     return rnam, {
         'LFLF': droo,
-        'OBIM': read_inner_uint16le_v7,  # check gid for DIG and FT
+        'OBIM': read_inner_uint16le_v7,
         'OBCD': read_inner_uint16le_v7,
         'LSCR': read_uint16le,
         'SCRP': compare_pid_off(dscr),
@@ -269,7 +285,9 @@ def read_index_v7(root):
     }
 
 
-def read_index_v8(root):
+def read_index_v8(
+    root: Iterable[Element],
+) -> tuple[dict[int, str], dict[str, IdGen]]:
     for t in root:
         sputm.render(t)
         if t.tag == 'RNAM':
@@ -315,17 +333,19 @@ def read_index_v8(root):
     }
 
 
-def get_object_id_from_name_v8(dobj):
-    def compare_name(pid, data, off):
-        name = data[8:48].split(b'\0')[0].decode()
+def get_object_id_from_name_v8(dobj: dict[str, tuple[int, int, int, int]]) -> IdGen:
+    def compare_name(pid: int, data: ArrayBuffer, off: int) -> int:
+        name = bytes(data[8:48]).split(b'\0')[0].decode()
         return dobj[name][0]
 
     return compare_name
 
 
-def read_index_he(root):
-    dtlk = None  # prevent `referenced before assignment` error
-    dmul = None
+def read_index_he(
+    root: Iterable[Element],
+) -> tuple[dict[int, str], dict[str, IdGen]]:
+    dtlk = {}  # prevent `referenced before assignment` error
+    dmul = {}
     for t in root:
         # sputm.render(t)
         if t.tag == 'RNAM':

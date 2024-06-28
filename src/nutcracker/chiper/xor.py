@@ -1,11 +1,11 @@
-from typing import IO, Optional
+from typing import IO
 
 CHIPER_KEY = 0x69
 
 
-def read(stream: IO[bytes], size: Optional[int] = None, key: int = CHIPER_KEY) -> bytes:
+def read(stream: IO[bytes], size: int | None = None, key: int = CHIPER_KEY) -> bytes:
     # None reads until EOF
-    return bytes(b ^ key for b in stream.read(size))  # type: ignore
+    return bytes(b ^ key for b in stream.read(size))  # type: ignore[arg-type]
 
 
 def write(stream: IO[bytes], data: bytes, key: int = CHIPER_KEY) -> int:
@@ -26,6 +26,6 @@ if __name__ == '__main__':
 
     with open(args.filename, 'rb') as infile, open(args.output, 'wb') as outfile:
         for buffer in copyio.buffered(
-            partial(read, infile, key=int(args.chiper_key, 16))
+            partial(read, infile, key=int(args.chiper_key, 16)),
         ):
             outfile.write(buffer)

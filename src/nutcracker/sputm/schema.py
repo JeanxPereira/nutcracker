@@ -1,4 +1,4 @@
-DATA = set()  # type: ignore
+DATA: set[str] = set()
 
 IMXX = {
     'SMAP',
@@ -9,7 +9,7 @@ IMXX = {
 
 RAWD = '____'  # Collect rest of chunk as raw data
 
-SCHEMA = {
+SCHEMA: dict[str, set[str]] = {
     RAWD: DATA,
     'LECF': {
         'LOFF',

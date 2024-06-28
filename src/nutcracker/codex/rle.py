@@ -1,6 +1,6 @@
 import io
 import itertools
-from typing import Sequence
+from collections.abc import Sequence
 
 from .base import unwrap_uint16le, wrap_uint16le
 
@@ -17,8 +17,8 @@ def encode_lined_rle(bmap: Sequence[Sequence[int]]) -> bytes:
             # print('ENCODED', eg)
             stream.write(
                 wrap_uint16le(
-                    b''.join(bytes([ll, *(() if ll & 1 else g)]) for ll, g in eg)
-                )
+                    b''.join(bytes([ll, *(() if ll & 1 else g)]) for ll, g in eg),
+                ),
             )
         return stream.getvalue()
 
@@ -59,11 +59,9 @@ def to_byte(num):
 
 
 def encode_rle_groups(groups, buf=()):
-
     buf = list(buf)
     groups = iter(groups)
     for group in groups:
-
         if set(group) == {0}:
             if buf:
                 # if len(set(buf)) == 1:
@@ -85,7 +83,6 @@ def encode_rle_groups(groups, buf=()):
             elif group:
                 yield (2 * len(group) + 1, group[:1])
         else:
-
             raw = 1 + len(buf) + len(group)
             encoded = 1 + len(buf) + 2
             if raw < encoded or (raw == encoded and buf):

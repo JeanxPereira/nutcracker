@@ -2,7 +2,6 @@ import argparse
 import os
 from dataclasses import replace
 from pprint import pprint
-from typing import Dict, Optional
 
 import yaml
 
@@ -16,7 +15,6 @@ from .chunk import SizeFixedChunk
 HEX_BASE = 16
 
 if __name__ == '__main__':
-
     parser = argparse.ArgumentParser(description='read smush file')
     parser.add_argument('filename', help='filename to read from')
     parser.add_argument('--size-fix', default=0, type=int, help='header size fix')
@@ -52,10 +50,10 @@ if __name__ == '__main__':
             yaml.dump(schema, schema_out)
 
     def update_element_path(
-        parent: Optional[Element],
+        parent: Element | None,
         chunk: Chunk,
         offset: int,
-    ) -> Dict[str, str]:
+    ) -> dict[str, str]:
         dirname = parent.attribs['path'] if parent else ''
         return {'path': os.path.join(dirname, chunk.tag)}
 

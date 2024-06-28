@@ -2,17 +2,20 @@
 
 import os
 import struct
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Callable, Iterator, Mapping, Optional, Sequence, Tuple
+
+import numpy as np
 
 from nutcracker.codex.codex import get_decoder
 from nutcracker.graphics import grid, image
 from nutcracker.graphics.frame import save_single_frame_image
+from nutcracker.kernel2.chunk import ArrayBuffer
+from nutcracker.kernel2.element import Element
 from nutcracker.smush import anim
 from nutcracker.smush.ahdr import AnimationHeader
 from nutcracker.smush.fobj import decompress, unobj
-from nutcracker.smush.types import Element
 
 
 def clip(lower: int, upper: int, value: int) -> int:
@@ -28,20 +31,20 @@ def delta_color(org_color: int, delta: int) -> int:
 
 @dataclass(frozen=True)
 class FrameGenCtx:
-    palette: bytes
-    screen: Tuple[image.ImagePosition, image.Matrix] = (
+    palette: ArrayBuffer
+    screen: tuple[image.ImagePosition, image.Matrix] = (
         image.ImagePosition(),
         (),
     )
     delta_pal: Sequence[int] = ()
-    frame: Optional[Element] = None
+    frame: Element | None = None
 
 
-def npal(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
-    return replace(ctx, palette=tuple(data))
+def npal(ctx: FrameGenCtx, data: ArrayBuffer) -> FrameGenCtx:
+    return replace(ctx, palette=np.frombuffer(data, dtype=np.uint8))
 
 
-def xpal(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
+def xpal(ctx: FrameGenCtx, data: ArrayBuffer) -> FrameGenCtx:
     sub_size = len(data)
 
     if sub_size == 0x300 * 3 + 4:
@@ -59,14 +62,15 @@ def xpal(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
         assert len(ctx.delta_pal) == 0x300
         assert len(ctx.palette) == 0x300
         palette = bytes(
-            delta_color(pal, delta) for pal, delta in zip(ctx.palette, ctx.delta_pal)
+            delta_color(pal, delta)
+            for pal, delta in zip(ctx.palette, ctx.delta_pal, strict=True)
         )
         return replace(ctx, palette=palette)
 
     assert False
 
 
-def decode_frame_object(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
+def decode_frame_object(ctx: FrameGenCtx, data: ArrayBuffer) -> FrameGenCtx:
     screen = convert_fobj(data)
     # im = save_single_frame_image(ctx.screen)
     # im.putpalette(ctx.palette)
@@ -74,11 +78,11 @@ def decode_frame_object(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
     return replace(ctx, screen=screen)
 
 
-def decode_compressed_frame_object(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
+def decode_compressed_frame_object(ctx: FrameGenCtx, data: ArrayBuffer) -> FrameGenCtx:
     return decode_frame_object(ctx, decompress(data))
 
 
-def unsupported_frame_comp(ctx: FrameGenCtx, data: bytes) -> FrameGenCtx:
+def unsupported_frame_comp(ctx: FrameGenCtx, data: ArrayBuffer) -> FrameGenCtx:
     # print(f'support for tag {tag} not implemented yet')
     return ctx
 
@@ -99,7 +103,7 @@ def generate_frames(
     ctx = FrameGenCtx(header.palette)
     for frame in frames:
         ctx = replace(ctx, frame=frame)
-        for comp in frame.children:
+        for comp in frame.children():
             ctx = DECODE_FRAME_IMAGE.get(comp.tag, unsupported_frame_comp)(
                 ctx,
                 comp.data,
@@ -133,14 +137,13 @@ def decode_san(root: Element, output_dir: str) -> None:
     os.makedirs(output_dir, exist_ok=True)
     for idx, ctx in enumerate(generate_frames(header, frames, DECODE_FRAME_IMAGE)):
         if ctx.screen:
-            assert ctx.palette
             im = save_single_frame_image(ctx.screen)
             # im = im.crop(box=(0,0,320,200))
             im.putpalette(ctx.palette)
             im.save(os.path.join(output_dir, f'FRME_{idx:05d}.png'))
 
 
-def convert_fobj(datam: bytes) -> Optional[Tuple[image.ImagePosition, bytes]]:
+def convert_fobj(datam: bytes) -> tuple[image.ImagePosition, bytes] | None:
     meta, data = unobj(datam)
     width = meta.x2 - meta.x1 if meta.codec != 1 else meta.x2
     height = meta.y2 - meta.y1 if meta.codec != 1 else meta.y2

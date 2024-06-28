@@ -2,7 +2,7 @@ import glob
 import io
 import os
 import pathlib
-from typing import Sequence
+from collections.abc import Sequence
 
 import numpy as np
 
@@ -16,6 +16,7 @@ from nutcracker.utils.funcutils import flatten
 
 def read_uint16les(stream):
     return read_uint16le(stream.read(2))
+
 
 def parse_strip_ega(height, strip_width, data):
     y = 0
@@ -32,7 +33,7 @@ def parse_strip_ega(height, strip_width, data):
                     if run == 0:
                         run = ord(s.read(1))
                     # print(run, color & 0xF, color >> 4, 'DITHER')
-                    output[y:y + run] = bytes(
+                    output[y : y + run] = bytes(
                         ((color & 0xF) if z & 1 else (color >> 4)) for z in range(run)
                     )
                     y += run
@@ -48,7 +49,7 @@ def parse_strip_ega(height, strip_width, data):
                 if run == 0:
                     run = ord(s.read(1))
                 # print(run, color & 0xF, 'NIBBLE')
-                output[y:y + run] = bytes([color & 0xF] * run)
+                output[y : y + run] = bytes([color & 0xF] * run)
                 y += run
         return np.asarray(output, dtype=np.uint8).reshape(strip_width, height).T
 
@@ -69,11 +70,13 @@ def decode_smap(height: int, width: int, data: bytes) -> Sequence[Sequence[int]]
     strips = (data[offset:end] for offset, end in index)
     return np.hstack([parse_strip_ega(height, strip_width, data) for data in strips])
 
+
 EGA_PALETTE = list(EGA.ravel()) + [59 for _ in range(0x300 - 0x30)]
 
 
 if __name__ == '__main__':
     import argparse
+
     from .preset import earwax
 
     parser = argparse.ArgumentParser(description='read smush file')
@@ -109,10 +112,17 @@ if __name__ == '__main__':
                 for oc in earwax.findall('OC', ro):
                     obj_id = oi.attribs['gid']
                     if oc.attribs['gid'] == obj_id:
-                        assert read_uint16le(oc.data, 4) == obj_id, (read_uint16le(oc.data, 4), obj_id)
+                        assert read_uint16le(oc.data, 4) == obj_id, (
+                            read_uint16le(oc.data, 4),
+                            obj_id,
+                        )
                         width = oc.data[9] * 8
                         height = oc.data[15] & 0xF8
                         oiim = decode_smap(height, width, oi.data)
                         imx = convert_to_pil_image(oiim)
                         imx.putpalette(EGA_PALETTE)
-                        imx.save(basename / 'objects' / f'room_{room_id:02d}_object_{obj_id:04d}.png')
+                        imx.save(
+                            basename
+                            / 'objects'
+                            / f'room_{room_id:02d}_object_{obj_id:04d}.png',
+                        )

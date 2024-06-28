@@ -1,9 +1,10 @@
 import io
-from typing import Iterable, Iterator, Mapping, Tuple, Type, TypeVar
+from collections.abc import Iterable, Iterator, Mapping
+from typing import TypeVar
 
+from nutcracker.kernel2.element import Element
 from nutcracker.sputm.script.opcodes import OpTable
 from nutcracker.sputm.script.opcodes_v5 import SomeOp
-from nutcracker.sputm.types import Element
 from nutcracker.utils.funcutils import flatten
 
 from .parser import CString, RefOffset, ScriptArg, Statement
@@ -12,7 +13,7 @@ S_Arg = TypeVar('S_Arg', bound=ScriptArg)
 ByteCode = Mapping[int, Statement]
 
 
-def get_argtype(args: Iterable[ScriptArg], argtype: Type[S_Arg]) -> Iterable[S_Arg]:
+def get_argtype(args: Iterable[ScriptArg], argtype: type[S_Arg]) -> Iterable[S_Arg]:
     for arg in args:
         if isinstance(arg, SomeOp):
             yield from get_argtype(arg.args, argtype)
@@ -31,7 +32,7 @@ class BytecodeParseError(ValueError):
         base_offset: int = 0,
     ) -> None:
         super().__init__(
-            f'Could not parse opcode 0x{opcode:02X} at offset [{base_offset + offset:08d}]: {cause!r}'
+            f'Could not parse opcode 0x{opcode:02X} at offset [{base_offset + offset:08d}]: {cause!r}',
         )
         self.buffer = buffer
         self.opcode = opcode
@@ -40,7 +41,11 @@ class BytecodeParseError(ValueError):
         self.base_offset = base_offset
 
 
-def descumm_iter(data: bytes, opcodes: OpTable, base_offset: int = 0) -> Iterable[Tuple[int, Statement]]:
+def descumm_iter(
+    data: bytes,
+    opcodes: OpTable,
+    base_offset: int = 0,
+) -> Iterable[tuple[int, Statement]]:
     with io.BytesIO(data) as stream:
         bytecode = {}
         while True:
@@ -57,7 +62,14 @@ def descumm_iter(data: bytes, opcodes: OpTable, base_offset: int = 0) -> Iterabl
             except Exception as e:
                 print(f'{type(e)}: {str(e)}')
                 print(f'0x{offset:04x}', f'0x{opcode:02x}')
-                raise BytecodeParseError(e, data, opcode, bytecode, offset, base_offset) from e
+                raise BytecodeParseError(
+                    e,
+                    data,
+                    opcode,
+                    bytecode,
+                    offset,
+                    base_offset,
+                ) from e
 
             else:
                 yield op.offset, bytecode[op.offset]
@@ -118,23 +130,23 @@ def to_bytes(bytecode: ByteCode) -> bytes:
         return stream.getvalue()
 
 
-def global_script(data: bytes) -> Tuple[bytes, bytes]:
+def global_script(data: bytes) -> tuple[bytes, bytes]:
     return b'', data
 
 
-def local_script(data: bytes) -> Tuple[bytes, bytes]:
+def local_script(data: bytes) -> tuple[bytes, bytes]:
     return data[:1], data[1:]
 
 
-def local_script_v7(data: bytes) -> Tuple[bytes, bytes]:
+def local_script_v7(data: bytes) -> tuple[bytes, bytes]:
     return data[:2], data[2:]
 
 
-def local_script_v8(data: bytes) -> Tuple[bytes, bytes]:
+def local_script_v8(data: bytes) -> tuple[bytes, bytes]:
     return data[:4], data[4:]
 
 
-def verb_script(data: bytes) -> Tuple[bytes, bytes]:
+def verb_script(data: bytes) -> tuple[bytes, bytes]:
     serial = b''
     with io.BytesIO(data) as stream:
         while True:
@@ -162,14 +174,14 @@ def get_scripts(root: Iterable[Element]) -> Iterator[Element]:
             if elem.tag in {*script_map, 'OBCD'}:
                 yield elem
             else:
-                yield from get_scripts(elem.children)
+                yield from get_scripts(elem.children())
 
 
 if __name__ == '__main__':
     import argparse
     import glob
 
-    from nutcracker.utils.fileio import read_file
+    from nutcracker.kernel2.fileio import ResourceFile
 
     from ..preset import sputm
     from .opcodes import OPCODES_he80
@@ -181,10 +193,8 @@ if __name__ == '__main__':
 
     files = set(flatten(glob.iglob(r) for r in args.files))
     for filename in files:
-
-        resource = read_file(filename, key=int(args.chiper_key, 16))
-
-        for elem in get_scripts(sputm.map_chunks(resource)):
-            _, script_data = script_map[elem.tag](elem.data)
-            bytecode = descumm(script_data, OPCODES_he80)
-            print_bytecode(bytecode)
+        with ResourceFile.load(filename, key=int(args.chiper_key, 16)) as resource:
+            for elem in get_scripts(sputm.map_chunks(resource)):
+                _, script_data = script_map[elem.tag](elem.data)
+                bytecode = descumm(script_data, OPCODES_he80)
+                print_bytecode(bytecode)

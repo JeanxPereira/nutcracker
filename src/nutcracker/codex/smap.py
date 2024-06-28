@@ -1,13 +1,14 @@
 import io
 import itertools
+from collections.abc import Sequence
 from functools import partial
-from typing import Sequence
 
 import numpy as np
 
 from nutcracker.utils.funcutils import grouper
 
 TRANSPARENCY = 255
+
 
 def read_uint16le(stream):
     return int.from_bytes(stream.read(2), byteorder='little', signed=False)
@@ -37,7 +38,6 @@ def decode_basic(stream, decoded_size, palen):
     sub = 1
 
     with io.BytesIO() as out:
-
         color = stream.read(1)[0]
         bitstream = create_bitsream(stream)
         out.write(to_byte(color))
@@ -57,7 +57,6 @@ def decode_basic(stream, decoded_size, palen):
 
 def decode_run_majmin(stream, decoded_size, palen):
     with io.BytesIO() as out:
-
         color = stream.read(1)[0]
         bitstream = create_bitsream(stream)
         out.write(to_byte(color))
@@ -108,7 +107,6 @@ def encode_basic(data, palen):
     return data[:1] + bytes(int(''.join(byte)[::-1], 2) for byte in gbits)
 
 
-
 def encode_run_majmin(data, palen, limit=255):
     bits = []
     grouped = (list(group) for _, group in itertools.groupby(data))
@@ -132,14 +130,16 @@ def encode_run_majmin(data, palen, limit=255):
         if currs:
             for group in grouper(currs, 255):
                 group = [x for x in group if x is not None]
-                if len(group) > limit:  # 12 in v6+ (dig, samnmax, dott (code 108)), 255 in v5? (atlantis, monkey2 (code 68))
+                if (
+                    len(group) > limit
+                ):  # 12 in v6+ (dig, samnmax, dott (code 108)), 255 in v5? (atlantis, monkey2 (code 68))
                     bits.extend([1, 1, 0, 0, 1])
                     bits.extend(int(x) for x in f'{len(group):08b}'[::-1])
                     # print(f'LARGE GROUP {len(group)}')
                 else:
                     # for _ in range(len(group)):
                     #     print('SMALL GROUP')
-                    bits.extend([0] * len(group)) 
+                    bits.extend([0] * len(group))
 
     gbits = grouper((str(x) for x in bits), 8, fillvalue='0')
     return bytes(int(''.join(byte)[::-1], 2) for byte in gbits)
@@ -159,7 +159,6 @@ def decode_he(stream, decoded_size, palen):
     delta_color = [-4, -3, -2, -1, 1, 2, 3, 4]
 
     with io.BytesIO() as out:
-
         color = stream.read(1)[0]
         bitstream = create_bitsream(stream)
         out.write(to_byte(color))
@@ -172,7 +171,6 @@ def decode_he(stream, decoded_size, palen):
                     color = collect_bits(bitstream, palen)
             out.write(to_byte(color))
         return out.getvalue()
-
 
 
 def encode_he(data, palen):
@@ -264,12 +262,16 @@ def encode_strip(data, height, width, code, allow_upgrade=True):
         if max_bits > palen:
             if allow_upgrade and max_bits <= 8:  # upgrade palen
                 assert allow_upgrade
-                print(f'WARNING: upgrading palette length from {palen} to {max_bits} to be able toinsert color value {max_color}')
+                print(
+                    f'WARNING: upgrading palette length from {palen} to {max_bits} to be able toinsert color value {max_color}',
+                )
                 code -= palen
                 palen = max_bits
                 code += palen
             else:
-                raise ValueError(f'Too many colors: trying to fit pixel value of {max_color} in {palen} bits, max: {(2 ** palen) - 1}')
+                raise ValueError(
+                    f'Too many colors: trying to fit pixel value of {max_color} in {palen} bits, max: {(2 ** palen) - 1}',
+                )
     with io.BytesIO() as s:
         s.write(bytes([code]))
         encoded = encode_method(data, palen)
@@ -302,7 +304,6 @@ def parse_strip(height, width, data, transparency=None):
         #         print(data[1:])
         #         assert encode_basic(dec_stream, height, palen, 8) == data[1:]
 
-
         if decode_method in {decode_run_majmin, decode_basic, decode_he}:
             if decode_method == decode_run_majmin:
                 if code - palen in {60, 80}:
@@ -333,7 +334,7 @@ def parse_strip(height, width, data, transparency=None):
             # print('O', obits)
 
             print(pos - 1, len(orig), len(encoded))
-            if orig[:len(encoded)] != encoded:
+            if orig[: len(encoded)] != encoded:
                 print('ORIG', orig)
                 print('ENCODED', encoded)
                 exit(1)
@@ -346,7 +347,8 @@ def parse_strip(height, width, data, transparency=None):
 
         order = 'C' if direction == 'HORIZONTAL' else 'F'
         return np.frombuffer(decoded, dtype=np.uint8).reshape(
-            (height, width), order=order
+            (height, width),
+            order=order,
         )
         # # return np.zeros((height, 8), dtype=np.uint8)
 
@@ -355,7 +357,12 @@ def parse_strip(height, width, data, transparency=None):
         #     return np.zeros((height, width), dtype=np.uint8)
 
 
-def decode_smap(height: int, width: int, data: bytes, transparency: bytes = None) -> Sequence[Sequence[int]]:
+def decode_smap(
+    height: int,
+    width: int,
+    data: bytes,
+    transparency: bytes = None,
+) -> Sequence[Sequence[int]]:
     strip_width = 8
 
     if width == 0 or height == 0:
@@ -368,7 +375,9 @@ def decode_smap(height: int, width: int, data: bytes, transparency: bytes = None
     index = list(zip(offs, offs[1:] + [len(data)]))
 
     strips = (data[offset:end] for offset, end in index)
-    return np.hstack([parse_strip(height, strip_width, data, transparency) for data in strips])
+    return np.hstack(
+        [parse_strip(height, strip_width, data, transparency) for data in strips],
+    )
 
 
 def extract_smap_codes(height: int, width: int, data: bytes) -> Sequence[int]:
@@ -393,7 +402,10 @@ def encode_smap(image: Sequence[Sequence[int]], codes=None) -> bytes:
     num_strips = width // strip_width
     if codes:
         print('CODES', codes)
-        strips = [encode_strip(s, *s.shape, code) for s, code in zip(np.hsplit(image, num_strips), codes)]
+        strips = [
+            encode_strip(s, *s.shape, code)
+            for s, code in zip(np.hsplit(image, num_strips), codes)
+        ]
     else:
         print('NO CODES')
         strips = [fake_encode_strip(s, *s.shape) for s in np.hsplit(image, num_strips)]
