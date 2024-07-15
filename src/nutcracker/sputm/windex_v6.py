@@ -1963,6 +1963,13 @@ def o6_findObject(op, stack, game):
 
 
 @regop
+def o71_findBox(op, stack, game):
+    ypos = stack.pop()
+    xpos = stack.pop()
+    stack.append(f'find-box {xpos},{ypos}')
+
+
+@regop
 def o72_findObject(op, stack, game):
     ypos = stack.pop()
     xpos = stack.pop()

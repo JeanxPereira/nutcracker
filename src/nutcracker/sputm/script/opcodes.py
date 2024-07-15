@@ -472,7 +472,7 @@ OPCODES_he71: OpTable = realize(
         0xF1: makeop('o71_compareString'),
         0xF5: makeop('o71_getStringLenForWidth'),
         0xF6: makeop('o71_getCharIndexInString'),
-        # TODO: 0xf7: makeop('o71_findBox'),
+        0xF7: makeop('o71_findBox'),
         0xFB: makeop('o71_polygonOps', extended_b_op),
         0xFC: makeop('o71_polygonHit'),
     },
